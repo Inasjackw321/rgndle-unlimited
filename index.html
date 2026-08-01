@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>RNGDLE Unlimited</title>
+    <meta
+      name="description"
+      content="Roll a nine-digit number. Fifteen factors judge it. Find out how rare your luck really was."
+    />
+    <meta name="color-scheme" content="dark" />
+    <meta name="theme-color" content="#0a0a12" />
+    <link rel="stylesheet" href="styles.css" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎲</text></svg>"
+    />
+  </head>
+  <body>
+    <canvas id="starfield" aria-hidden="true"></canvas>
+    <canvas id="particles" aria-hidden="true"></canvas>
+
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">🎲</span>
+        <h1>RNGDLE<span>UNLIMITED</span></h1>
+      </div>
+
+      <div class="topbar-actions">
+        <button id="sound-toggle" class="icon-btn" type="button" aria-pressed="true" title="Toggle sound">
+          <span data-sound-on>🔊</span><span data-sound-off hidden>🔇</span>
+        </button>
+        <button id="help-btn" class="icon-btn" type="button" title="How scoring works">?</button>
+        <div id="auth-slot" class="auth-slot">
+          <button id="login-btn" class="discord-btn" type="button">
+            <svg viewBox="0 0 24 18" aria-hidden="true" class="discord-logo">
+              <path
+                fill="currentColor"
+                d="M20.3 1.6A19.8 19.8 0 0 0 15.4.1a14 14 0 0 0-.6 1.3 18.3 18.3 0 0 0-5.5 0A13.9 13.9 0 0 0 8.6.1a19.7 19.7 0 0 0-4.9 1.5C.6 6.2-.2 10.7.2 15.1a19.9 19.9 0 0 0 6 3 14.7 14.7 0 0 0 1.3-2.1 12.9 12.9 0 0 1-2-1c.2-.1.3-.2.5-.4a14.2 14.2 0 0 0 12.1 0l.5.4a12.9 12.9 0 0 1-2 1 14.5 14.5 0 0 0 1.2 2.1 19.8 19.8 0 0 0 6-3c.5-5.1-.8-9.6-3.5-13.5ZM8 12.4c-1.2 0-2.2-1.1-2.2-2.4S6.8 7.6 8 7.6s2.2 1.1 2.2 2.4-1 2.4-2.2 2.4Zm8 0c-1.2 0-2.2-1.1-2.2-2.4s1-2.4 2.2-2.4 2.2 1.1 2.2 2.4-1 2.4-2.2 2.4Z"
+              />
+            </svg>
+            <span>Sign in with Discord</span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <div id="notice" class="notice" hidden></div>
+
+    <main class="layout">
+      <section class="stage" aria-label="Roll">
+        <div class="machine">
+          <div class="machine-glow" aria-hidden="true"></div>
+
+          <div
+            id="reels"
+            class="reels"
+            role="img"
+            aria-live="polite"
+            aria-label="Roll result: not yet rolled"
+          ></div>
+
+          <div class="cosmic" id="cosmic">
+            <span class="cosmic-label">COSMIC</span>
+            <span class="cosmic-value" id="cosmic-value">—</span>
+            <span class="cosmic-name" id="cosmic-name">awaiting roll</span>
+          </div>
+        </div>
+
+        <button id="roll-btn" class="roll-btn" type="button">
+          <span class="roll-btn-label">ROLL</span>
+          <span class="roll-btn-sub">press space</span>
+        </button>
+
+        <div class="verdict" id="verdict" data-state="empty">
+          <div class="verdict-rank" id="verdict-rank" aria-hidden="true"></div>
+          <div class="verdict-body">
+            <div class="verdict-score" id="verdict-score">0</div>
+            <div class="verdict-rarity" id="verdict-rarity"></div>
+            <div class="verdict-meta" id="verdict-meta"></div>
+          </div>
+        </div>
+
+        <div class="factors" id="factors" aria-live="polite"></div>
+      </section>
+
+      <aside class="sidebar">
+        <div class="tabs" role="tablist">
+          <button class="tab is-active" role="tab" data-panel="leaderboard" aria-selected="true">
+            Leaderboard
+          </button>
+          <button class="tab" role="tab" data-panel="history" aria-selected="false">History</button>
+          <button class="tab" role="tab" data-panel="stats" aria-selected="false">Stats</button>
+        </div>
+
+        <div class="panel is-active" data-panel="leaderboard">
+          <div class="panel-note" id="board-note"></div>
+          <ol class="board" id="board"></ol>
+        </div>
+
+        <div class="panel" data-panel="history">
+          <ol class="history" id="history"></ol>
+        </div>
+
+        <div class="panel" data-panel="stats">
+          <dl class="stats" id="stats"></dl>
+        </div>
+      </aside>
+    </main>
+
+    <dialog id="help-dialog" class="dialog">
+      <article>
+        <h2>How the score works</h2>
+        <p>
+          Every roll produces nine digits and one <strong>cosmic multiplier</strong>. The digits are then
+          examined by a panel of factors, each of which pays out according to how unlikely it is.
+        </p>
+        <h3>Improbability</h3>
+        <p>
+          Every roll scores this one. It looks at the roll's <em>shape</em> — how many of each digit you got,
+          ignoring order — and computes the exact probability of that shape. The payout is proportional to
+          <code>1 / &radic;P</code>, so a shape twice as rare pays about 1.41&times; as much.
+        </p>
+        <h3>Arrangement factors</h3>
+        <p>
+          Improbability is blind to order, so the rest of the panel rewards it: identical runs, ascending and
+          descending straights, palindromes, alternating patterns, arithmetic sequences, repeated halves and
+          trailing zeros.
+        </p>
+        <h3>Number theory &amp; culture</h3>
+        <p>
+          The nine digits are also read as a single integer — primes and perfect squares pay out — and scanned
+          for a short list of numbers that people care about for entirely unmathematical reasons.
+        </p>
+        <h3>Ranks are real</h3>
+        <p id="help-calibration">
+          Ranks are not arbitrary thresholds. The scoring engine was run over millions of simulated rolls, and
+          your rank is your position in that distribution. "Top 0.01%" means exactly that.
+        </p>
+        <h3>Setup</h3>
+        <p id="help-setup"></p>
+      </article>
+      <button class="dialog-close" type="button">Close</button>
+    </dialog>
+
+    <script type="module" src="js/main.js"></script>
+  </body>
+</html>

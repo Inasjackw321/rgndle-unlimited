@@ -1,0 +1,14 @@
+name = "rngdle-leaderboard"
+main = "src/index.js"
+compatibility_date = "2024-11-01"
+
+# Lock this down to your Pages origin once you know it, e.g.
+#   https://your-username.github.io
+[vars]
+ALLOWED_ORIGIN = "*"
+
+# Create with:  npx wrangler kv namespace create RNGDLE
+# then paste the returned id below.
+[[kv_namespaces]]
+binding = "RNGDLE"
+id = "replace-me"

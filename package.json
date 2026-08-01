@@ -1,0 +1,13 @@
+{
+  "name": "rngdle-unlimited",
+  "version": "1.0.0",
+  "description": "Roll a nine-digit number and find out how rare your luck really was.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "percentiles": "node tools/gen-percentiles.mjs 2000000",
+    "verify": "node tools/verify.mjs",
+    "start": "node tools/serve.mjs"
+  },
+  "license": "MIT"
+}
