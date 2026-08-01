@@ -9,16 +9,24 @@ import { startStarfield, initParticles, burst, countUp, shake, wait } from './fx
 import * as audio from './audio.js';
 import * as auth from './discord.js';
 import * as board from './leaderboard.js';
+import * as daily from './daily.js';
+import * as achievements from './achievements.js';
+import * as share from './share.js';
 import { resolved, redirectUri } from './config.js';
 import * as ui from './ui.js';
 
 const HISTORY_KEY = 'rngdle_history';
+const DAILY_STREAK_KEY = 'rngdle_daily_streak';
 
 const state = {
   rolling: false,
+  mode: 'endless',
+  scope: 'all',
   history: [],
   streak: 0,
   lastTotal: null,
+  lastResult: null,
+  countdownTimer: null,
 };
 
 /* ------------------------------------------------------------------ *
@@ -34,6 +42,14 @@ function random() {
     poolIndex = 0;
   }
   return pool[poolIndex++] / 4294967296;
+}
+
+/* ------------------------------------------------------------------ *
+ * Identity
+ * ------------------------------------------------------------------ */
+
+function playerId() {
+  return auth.currentSession()?.user?.id || daily.guestId();
 }
 
 /* ------------------------------------------------------------------ *
@@ -60,17 +76,117 @@ function saveHistory(entry) {
 }
 
 /* ------------------------------------------------------------------ *
+ * Daily streak
+ * ------------------------------------------------------------------ */
+
+function readDailyStreak() {
+  try {
+    return JSON.parse(localStorage.getItem(DAILY_STREAK_KEY) || '{"count":0,"last":null}');
+  } catch {
+    return { count: 0, last: null };
+  }
+}
+
+/** Increments when today follows yesterday, resets after any gap. */
+function bumpDailyStreak(today = daily.dateKey()) {
+  const record = readDailyStreak();
+  if (record.last === today) return record.count;
+
+  const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+  const count = record.last === yesterday ? record.count + 1 : 1;
+  const next = { count, last: today };
+  try {
+    localStorage.setItem(DAILY_STREAK_KEY, JSON.stringify(next));
+  } catch {
+    /* ignore */
+  }
+  return count;
+}
+
+/* ------------------------------------------------------------------ *
  * Leaderboard
  * ------------------------------------------------------------------ */
 
 async function refreshBoard() {
-  const session = auth.currentSession();
-  const meId = session?.user?.id || 'guest';
+  const meId = playerId();
   try {
-    const entries = await board.listTop();
-    ui.renderBoard(entries, meId, { shared: board.isShared() });
+    const entries = await board.listTop(state.scope);
+    ui.renderBoard(entries, meId, { shared: board.isShared(), scope: state.scope });
   } catch (err) {
-    ui.renderBoard([], meId, { shared: board.isShared(), error: err.message });
+    ui.renderBoard([], meId, { shared: board.isShared(), scope: state.scope, error: err.message });
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Daily mode presentation
+ * ------------------------------------------------------------------ */
+
+function stopCountdown() {
+  if (state.countdownTimer) {
+    clearInterval(state.countdownTimer);
+    state.countdownTimer = null;
+  }
+}
+
+function startCountdown() {
+  stopCountdown();
+  const paint = () => {
+    ui.setDailyStatus(
+      `Next Daily in <b>${daily.formatCountdown(daily.msUntilNextDaily())}</b> · streak <b>${
+        readDailyStreak().count
+      }</b>`,
+    );
+  };
+  paint();
+  state.countdownTimer = setInterval(paint, 1000);
+}
+
+/** Reflects whether today's Daily is still available in the button and dot. */
+function paintMode() {
+  const played = daily.playedToday(playerId());
+  ui.setDailyAvailable(state.mode !== 'daily' && !played);
+
+  if (state.mode !== 'daily') {
+    stopCountdown();
+    ui.setDailyStatus(null);
+    ui.setRollButton({ label: 'ROLL', sub: 'press space', disabled: state.rolling });
+    return;
+  }
+
+  if (played) {
+    startCountdown();
+    ui.setRollButton({ label: 'PLAYED', sub: 'come back tomorrow', disabled: true });
+  } else {
+    stopCountdown();
+    ui.setDailyStatus(`Daily Challenge for <b>${daily.dateKey()}</b> · one roll, no rerolls`);
+    ui.setRollButton({ label: 'ROLL DAILY', sub: 'press space', disabled: state.rolling });
+  }
+}
+
+/** Re-displays an already-played Daily without re-animating the reels. */
+function showPlayedDaily() {
+  const played = daily.playedToday(playerId());
+  if (!played) return;
+
+  const digits = [...played.digits].map(Number);
+  setDigits(digits);
+  highlight(highlightIndices(digits));
+
+  const rank = RANKS.find((r) => r.label === played.rank) || RANKS[0];
+  ui.setRankColor(rank);
+  document.querySelector('.machine').classList.add('is-lit');
+  ui.setCosmic({ value: played.cosmic, label: 'locked in' });
+  ui.showVerdict();
+  ui.el('verdict-score').textContent = played.score.toLocaleString();
+  ui.renderRank(rank);
+  ui.renderRarity(played.percentile, rank);
+  ui.renderMeta(played.result || { display: played.digits, base: played.base ?? 0, multiplier: played.multipliers, factors: played.factors || [] });
+  if (played.result) {
+    ui.renderFactors(played.result);
+    state.lastResult = { result: played.result, rank, percentile: played.percentile, mode: 'daily', day: played.day };
+    ui.showShare(true);
+  } else {
+    ui.showShare(false);
   }
 }
 
@@ -80,25 +196,38 @@ async function refreshBoard() {
 
 async function roll() {
   if (state.rolling) return;
-  state.rolling = true;
 
-  const button = ui.el('roll-btn');
+  const isDaily = state.mode === 'daily';
+  const me = playerId();
+  if (isDaily && daily.playedToday(me)) return;
+
+  state.rolling = true;
   const machine = document.querySelector('.machine');
-  button.disabled = true;
+  ui.setRollButton({
+    label: isDaily ? 'ROLL DAILY' : 'ROLL',
+    sub: 'rolling…',
+    disabled: true,
+  });
   audio.unlock();
 
   ui.clearVerdict();
+  ui.showShare(false);
   ui.resetCosmic();
+  ui.setDailyStatus(null);
   clearHighlights();
   machine.classList.remove('is-lit');
 
-  const digits = rollDigits(random);
-  const cosmic = rollCosmic(random);
+  const { digits, cosmic } = isDaily
+    ? daily.dailyRoll(daily.dateKey(), me)
+    : { digits: rollDigits(random), cosmic: rollCosmic(random) };
+
+  // The Daily is a single fixed roll, so session multipliers would make the
+  // board depend on how much you played beforehand. Keep it clean.
   const streak =
-    state.streak > 0
+    !isDaily && state.streak > 0
       ? { value: 1 + Math.min(state.streak, 10) * 0.1, label: `Hot Streak ×${state.streak}` }
       : null;
-  const time = timeBonus();
+  const time = isDaily ? null : timeBonus();
 
   audio.whoosh();
   await spin(digits, (i) => audio.tick(i));
@@ -141,25 +270,59 @@ async function roll() {
     burst(ui.el('verdict-rank'), { count: 70, colors: [rank.color] });
   }
 
-  // Streak is judged against the previous roll only.
-  state.streak = state.lastTotal !== null && result.total > state.lastTotal ? state.streak + 1 : 0;
-  state.lastTotal = result.total;
+  // Streak is judged against the previous roll only, and only in endless mode.
+  if (!isDaily) {
+    state.streak = state.lastTotal !== null && result.total > state.lastTotal ? state.streak + 1 : 0;
+    state.lastTotal = result.total;
+  }
 
-  const entry = board.entryFor(result, percentile, rank);
+  const entry = board.entryFor(result, percentile, rank, { mode: state.mode });
   saveHistory(entry);
   ui.renderHistory(state.history);
   ui.renderStats(state.history);
 
+  const dailyStreak = isDaily ? bumpDailyStreak() : readDailyStreak().count;
+  if (isDaily) {
+    daily.markPlayed(me, { ...entry, result, base: result.base, percentile });
+  }
+
+  state.lastResult = { result, rank, percentile, mode: state.mode, day: entry.day };
+  ui.showShare(true);
+
+  // Achievements
+  const unlocked = achievements.evaluate({
+    result,
+    rank,
+    rankIndex,
+    percentile,
+    mode: state.mode,
+    totals: {
+      rolls: state.history.length,
+      streak: state.streak,
+      dailyStreak,
+    },
+  });
+  unlocked.forEach((award, i) => {
+    setTimeout(() => {
+      ui.toast({ icon: award.icon, name: award.name, desc: award.desc });
+      audio.fanfare(3);
+    }, 500 + i * 700);
+  });
+  if (unlocked.length) {
+    const { unlocked: all } = achievements.progress();
+    ui.renderAwards(achievements.ACHIEVEMENTS, all);
+  }
+
   try {
-    await board.submitScore(entry);
+    await board.submitScore(entry, isDaily ? 'daily' : 'all');
     ui.notice(null);
   } catch (err) {
     ui.notice(`Could not submit score: ${err.message}`);
   }
   await refreshBoard();
 
-  button.disabled = false;
   state.rolling = false;
+  paintMode();
 }
 
 /* ------------------------------------------------------------------ *
@@ -217,6 +380,90 @@ function setupKeyboard() {
   });
 }
 
+function setupShare() {
+  // Note: these handlers await, so they must capture the button up front —
+  // event.currentTarget is null once dispatch has finished.
+  const cardBtn = ui.el('share-card');
+  const textBtn = ui.el('share-text');
+
+  cardBtn.addEventListener('click', async () => {
+    if (!state.lastResult) return;
+    const { result, rank, percentile, mode, day } = state.lastResult;
+    const user = auth.currentSession()?.user;
+    const canvas = share.renderCard(result, rank, percentile, {
+      mode,
+      day,
+      player: user ? auth.displayName(user) : null,
+    });
+    try {
+      const outcome = await share.shareCard(canvas, `rngdle-${result.display}.png`);
+      ui.flashButton(cardBtn, outcome === 'copied' ? 'Copied!' : 'Downloaded');
+    } catch {
+      ui.flashButton(cardBtn, 'Failed');
+    }
+  });
+
+  textBtn.addEventListener('click', async () => {
+    if (!state.lastResult) return;
+    const { result, rank, percentile, mode, day } = state.lastResult;
+    const ok = await share.copyText(share.shareText(result, rank, percentile, { mode, day }));
+    ui.flashButton(textBtn, ok ? 'Copied!' : 'Press Ctrl+C');
+  });
+}
+
+function setupModes() {
+  ui.initModeSwitch((mode) => {
+    state.mode = mode;
+    ui.clearVerdict();
+    ui.showShare(false);
+    clearHighlights();
+    document.querySelector('.machine').classList.remove('is-lit');
+    if (mode === 'daily') showPlayedDaily();
+    paintMode();
+  });
+
+  ui.initScopeSwitch((scope) => {
+    state.scope = scope;
+    refreshBoard();
+  });
+}
+
+function paintAuth(session) {
+  ui.renderAuth(session, {
+    configured: auth.isConfigured(),
+    canReconnect: auth.hasSignedInBefore(),
+    expiring: auth.needsRenewal(),
+    onLogin: () => signIn({ silent: false }),
+    onReconnect: () => signIn({ silent: true }),
+    onLogout: () => {
+      auth.logout();
+      paintMode();
+      refreshBoard();
+    },
+  });
+}
+
+async function signIn({ silent }) {
+  try {
+    const session = await auth.login({ silent });
+    const moved = board.migrateGuestScores(session.user);
+    if (moved) {
+      ui.toast({
+        icon: '📦',
+        label: 'SIGNED IN',
+        name: `Welcome, ${auth.displayName(session.user)}`,
+        desc: 'Your guest scores moved across.',
+      });
+    }
+    ui.notice(null);
+    paintMode();
+    await refreshBoard();
+  } catch (err) {
+    if (err.code === 'cancelled') return;
+    ui.notice(`Discord sign-in failed: ${err.message}`);
+  }
+}
+
 async function init() {
   startStarfield(ui.el('starfield'));
   initParticles(ui.el('particles'));
@@ -225,28 +472,23 @@ async function init() {
   setupHelp();
   setupSound();
   setupKeyboard();
+  setupShare();
+  setupModes();
 
   loadHistory();
   ui.renderHistory(state.history);
   ui.renderStats(state.history);
+  ui.renderAwards(achievements.ACHIEVEMENTS, achievements.progress().unlocked);
   if (state.history.length) setDigits([...state.history[0].digits].map(Number));
 
   ui.el('roll-btn').addEventListener('click', roll);
 
-  auth.onAuthChange((session) => {
-    ui.renderAuth(session, {
-      configured: auth.isConfigured(),
-      onLogin: () => auth.login(),
-      onLogout: () => {
-        auth.logout();
-        refreshBoard();
-      },
-    });
-  });
+  auth.onAuthChange(paintAuth);
 
   const authError = await auth.initAuth();
   if (authError) ui.notice(authError);
 
+  paintMode();
   await refreshBoard();
 }
 

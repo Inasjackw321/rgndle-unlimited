@@ -3,7 +3,7 @@
  * about the game loop.
  */
 
-import { avatarUrl, displayName } from './discord.js';
+import { avatarUrl, displayName, accentColor } from './discord.js';
 import { RANKS, describeRarity, DISTRIBUTION, SAMPLE_SIZE } from './ranks.js';
 
 export const el = (id) => document.getElementById(id);
@@ -21,18 +21,25 @@ const PLACEHOLDER_AVATAR =
  * Auth chip
  * ------------------------------------------------------------------ */
 
-export function renderAuth(session, { onLogin, onLogout, configured }) {
+export function renderAuth(session, { onLogin, onLogout, onReconnect, configured, canReconnect, expiring }) {
   const slot = el('auth-slot');
   slot.replaceChildren();
 
   if (session?.user) {
     const chip = document.createElement('div');
     chip.className = 'user-chip';
+    chip.classList.toggle('is-expiring', Boolean(expiring));
 
     const img = document.createElement('img');
     img.src = avatarUrl(session.user, 64);
     img.alt = '';
     img.loading = 'lazy';
+    img.referrerPolicy = 'no-referrer';
+    img.addEventListener('error', () => {
+      img.src = PLACEHOLDER_AVATAR;
+    });
+    const accent = accentColor(session.user);
+    if (accent) img.style.borderColor = accent;
 
     const name = document.createElement('span');
     name.className = 'user-name';
@@ -44,7 +51,30 @@ export function renderAuth(session, { onLogin, onLogout, configured }) {
     out.addEventListener('click', onLogout);
 
     chip.append(img, name, out);
+
+    if (expiring) {
+      const renew = document.createElement('button');
+      renew.type = 'button';
+      renew.textContent = 'Renew';
+      renew.title = 'Your Discord session expires soon';
+      renew.style.color = 'var(--gold)';
+      renew.addEventListener('click', onReconnect);
+      chip.append(renew);
+    }
+
     slot.append(chip);
+    return;
+  }
+
+  // Signed out, but this browser has signed in before: offer a one-click
+  // reconnect, which uses prompt=none and so needs no consent screen.
+  if (configured && canReconnect) {
+    const btn = document.createElement('button');
+    btn.className = 'reconnect-btn';
+    btn.type = 'button';
+    btn.innerHTML = '<span aria-hidden="true">\u21bb</span><span>Reconnect Discord</span>';
+    btn.addEventListener('click', onReconnect);
+    slot.append(btn);
     return;
   }
 
@@ -213,21 +243,33 @@ function emptyState(text) {
   return li;
 }
 
-export function renderBoard(entries, meId, { shared, error }) {
+export function renderBoard(entries, meId, { shared, error, scope = 'all' }) {
   const list = el('board');
   const note = el('board-note');
   list.replaceChildren();
 
-  note.textContent = shared
-    ? 'Global leaderboard — one entry per player, personal best.'
-    : 'On-device leaderboard. Configure a leaderboard endpoint to play against everyone else.';
+  if (scope === 'daily') {
+    note.textContent = shared
+      ? "Today's Daily Challenge. Every entry is recomputed server-side, so this board cannot be faked."
+      : "Today's Daily Challenge, stored on this device.";
+  } else {
+    note.textContent = shared
+      ? 'Global leaderboard — one entry per player, personal best.'
+      : 'On-device leaderboard. Configure a leaderboard endpoint to play against everyone else.';
+  }
 
   if (error) {
     list.append(emptyState(error));
     return;
   }
   if (!entries.length) {
-    list.append(emptyState('No scores yet.\nRoll something worth bragging about.'));
+    list.append(
+      emptyState(
+        scope === 'daily'
+          ? 'Nobody has played today yet.'
+          : 'No scores yet.\nRoll something worth bragging about.',
+      ),
+    );
     return;
   }
 
@@ -376,4 +418,157 @@ export function initTabs() {
       for (const p of panels) p.classList.toggle('is-active', p.dataset.panel === tab.dataset.panel);
     });
   }
+}
+
+/* ------------------------------------------------------------------ *
+ * Achievements
+ * ------------------------------------------------------------------ */
+
+export function renderAwards(definitions, unlocked) {
+  const list = el('awards');
+  list.replaceChildren();
+
+  const count = Object.keys(unlocked).length;
+  el('awards-fill').style.width = `${(count / definitions.length) * 100}%`;
+  el('awards-count').textContent = `${count} of ${definitions.length} unlocked`;
+
+  // Unlocked first (most recent at the top), then the rest in definition order.
+  const ordered = [
+    ...definitions.filter((a) => unlocked[a.id]).sort((a, b) => unlocked[b.id] - unlocked[a.id]),
+    ...definitions.filter((a) => !unlocked[a.id]),
+  ];
+
+  for (const award of ordered) {
+    const isUnlocked = Boolean(unlocked[award.id]);
+    const li = document.createElement('li');
+    li.className = isUnlocked ? 'is-unlocked' : 'is-locked';
+
+    const icon = document.createElement('span');
+    icon.className = 'award-icon';
+    // Secret achievements stay hidden until earned.
+    icon.textContent = isUnlocked || !award.secret ? award.icon : '❔';
+
+    const text = document.createElement('div');
+    text.className = 'award-text';
+    const name = document.createElement('div');
+    name.className = 'award-name';
+    name.textContent = isUnlocked || !award.secret ? award.name : 'Secret';
+    const desc = document.createElement('div');
+    desc.className = 'award-desc';
+    desc.textContent = isUnlocked || !award.secret ? award.desc : 'Keep rolling.';
+    text.append(name, desc);
+
+    li.append(icon, text);
+    list.append(li);
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Toasts
+ * ------------------------------------------------------------------ */
+
+export function toast({ icon = '🏆', label = 'ACHIEVEMENT', name, desc }, duration = 4600) {
+  const host = el('toasts');
+  const node = document.createElement('div');
+  node.className = 'toast';
+
+  const iconEl = document.createElement('span');
+  iconEl.className = 'toast-icon';
+  iconEl.textContent = icon;
+
+  const body = document.createElement('div');
+  const labelEl = document.createElement('div');
+  labelEl.className = 'toast-label';
+  labelEl.textContent = label;
+  const nameEl = document.createElement('div');
+  nameEl.className = 'toast-name';
+  nameEl.textContent = name;
+  body.append(labelEl, nameEl);
+
+  if (desc) {
+    const descEl = document.createElement('div');
+    descEl.className = 'toast-desc';
+    descEl.textContent = desc;
+    body.append(descEl);
+  }
+
+  node.append(iconEl, body);
+  host.append(node);
+
+  setTimeout(() => {
+    node.classList.add('is-leaving');
+    node.addEventListener('animationend', () => node.remove(), { once: true });
+  }, duration);
+}
+
+/* ------------------------------------------------------------------ *
+ * Mode switch / daily status
+ * ------------------------------------------------------------------ */
+
+export function initModeSwitch(onChange) {
+  const buttons = [...document.querySelectorAll('.mode')];
+  for (const btn of buttons) {
+    btn.addEventListener('click', () => {
+      for (const b of buttons) {
+        const active = b === btn;
+        b.classList.toggle('is-active', active);
+        b.setAttribute('aria-selected', String(active));
+      }
+      onChange(btn.dataset.mode);
+    });
+  }
+}
+
+export function initScopeSwitch(onChange) {
+  const buttons = [...document.querySelectorAll('.scope')];
+  for (const btn of buttons) {
+    btn.addEventListener('click', () => {
+      for (const b of buttons) {
+        const active = b === btn;
+        b.classList.toggle('is-active', active);
+        b.setAttribute('aria-selected', String(active));
+      }
+      onChange(btn.dataset.scope);
+    });
+  }
+}
+
+export function setDailyAvailable(available) {
+  el('daily-dot').hidden = !available;
+}
+
+export function setDailyStatus(html) {
+  const box = el('daily-status');
+  if (!html) {
+    box.hidden = true;
+    return;
+  }
+  box.innerHTML = html;
+  box.hidden = false;
+}
+
+export function setRollButton({ label, sub, disabled }) {
+  const btn = el('roll-btn');
+  btn.querySelector('.roll-btn-label').textContent = label;
+  btn.querySelector('.roll-btn-sub').textContent = sub;
+  btn.disabled = disabled;
+}
+
+/* ------------------------------------------------------------------ *
+ * Share
+ * ------------------------------------------------------------------ */
+
+export function showShare(visible) {
+  el('share-row').hidden = !visible;
+}
+
+/** Momentary "Copied" confirmation on a share button. */
+export function flashButton(button, text) {
+  const original = button.textContent;
+  button.textContent = text;
+  button.classList.add('is-done');
+  setTimeout(() => {
+    button.textContent = original;
+    button.classList.remove('is-done');
+  }, 1800);
 }

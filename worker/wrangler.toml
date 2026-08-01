@@ -2,13 +2,21 @@ name = "rngdle-leaderboard"
 main = "src/index.js"
 compatibility_date = "2024-11-01"
 
-# Lock this down to your Pages origin once you know it, e.g.
-#   https://your-username.github.io
 [vars]
+# Lock this down to your Pages origin once you know it, e.g.
+#   ALLOWED_ORIGIN = "https://your-username.github.io"
 ALLOWED_ORIGIN = "*"
+
+# Minimum rank that gets announced to Discord. One of:
+#   F D C B A S SS SSS ULTRA Ω
+ANNOUNCE_MIN_RANK = "SS"
 
 # Create with:  npx wrangler kv namespace create RNGDLE
 # then paste the returned id below.
 [[kv_namespaces]]
 binding = "RNGDLE"
 id = "replace-me"
+
+# Channel announcements are opt-in and the URL is a secret, never a var, so it
+# is not readable from the client:
+#   npx wrangler secret put ANNOUNCE_WEBHOOK

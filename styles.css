@@ -37,6 +37,13 @@
   box-sizing: border-box;
 }
 
+/* The `hidden` attribute is only display:none in the UA stylesheet, so any
+   author rule that sets `display` silently defeats it. Several components here
+   (.mode-dot, .share-row) do exactly that — make hidden win everywhere. */
+[hidden] {
+  display: none !important;
+}
+
 html,
 body {
   margin: 0;
@@ -1063,5 +1070,308 @@ body {
   #starfield,
   #particles {
     display: none;
+  }
+}
+
+/* ---------------- Mode switch ---------------- */
+
+.mode-switch,
+.scope-switch {
+  display: inline-flex;
+  padding: 4px;
+  gap: 4px;
+  border-radius: 12px;
+  border: 1px solid var(--panel-line);
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.mode,
+.scope {
+  position: relative;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font-weight: 650;
+  font-size: 13px;
+  padding: 7px 18px;
+  border-radius: 9px;
+  cursor: pointer;
+  transition: color 0.2s, background 0.2s;
+}
+
+.mode:hover,
+.scope:hover {
+  color: var(--text);
+}
+
+.mode.is-active,
+.scope.is-active {
+  color: #06121a;
+  background: linear-gradient(180deg, var(--accent), #2bb8dd);
+  box-shadow: 0 4px 14px -6px var(--accent);
+}
+
+.scope-switch {
+  display: flex;
+  width: 100%;
+  margin-bottom: 8px;
+}
+
+.scope {
+  flex: 1;
+  padding: 6px 10px;
+  font-size: 12.5px;
+}
+
+/* Unplayed-daily indicator */
+.mode-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background: var(--gold);
+  vertical-align: middle;
+  animation: dot-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes dot-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(255, 200, 87, 0.65);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(255, 200, 87, 0);
+  }
+}
+
+.daily-status {
+  font-size: 13px;
+  color: var(--muted);
+  text-align: center;
+  margin-top: -8px;
+}
+
+.daily-status b {
+  color: var(--text);
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------------- Share ---------------- */
+
+.share-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+
+.share-btn {
+  padding: 7px 14px;
+  border-radius: 9px;
+  border: 1px solid var(--panel-line);
+  background: var(--panel);
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.14s, background 0.2s, border-color 0.2s;
+}
+
+.share-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: var(--rank);
+  transform: translateY(-1px);
+}
+
+.share-btn.is-done {
+  border-color: #4ade80;
+  color: #4ade80;
+}
+
+/* ---------------- Reconnect chip ---------------- */
+
+.reconnect-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 15px;
+  border-radius: 11px;
+  border: 1px solid rgba(255, 200, 87, 0.5);
+  background: rgba(255, 200, 87, 0.12);
+  color: #ffe4a8;
+  font-weight: 650;
+  font-size: 13.5px;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.15s;
+}
+
+.reconnect-btn:hover {
+  background: rgba(255, 200, 87, 0.2);
+  transform: translateY(-1px);
+}
+
+.user-chip.is-expiring {
+  border-color: rgba(255, 200, 87, 0.5);
+}
+
+/* ---------------- Achievements ---------------- */
+
+.awards-progress {
+  padding: 4px 6px 10px;
+}
+
+.awards-bar {
+  height: 6px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.awards-bar span {
+  display: block;
+  height: 100%;
+  width: 0;
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
+  transition: width 0.7s cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+
+.awards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.awards li {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 9px 10px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.028);
+}
+
+.awards li.is-locked {
+  opacity: 0.42;
+}
+
+.awards li.is-unlocked {
+  border-color: rgba(110, 231, 255, 0.28);
+  background: rgba(110, 231, 255, 0.07);
+}
+
+.award-icon {
+  font-size: 19px;
+  width: 26px;
+  text-align: center;
+  flex: 0 0 auto;
+  filter: grayscale(1);
+}
+
+.awards li.is-unlocked .award-icon {
+  filter: none;
+}
+
+.award-text {
+  min-width: 0;
+  flex: 1;
+}
+
+.award-name {
+  font-size: 13.5px;
+  font-weight: 650;
+}
+
+.award-desc {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+/* ---------------- Toasts ---------------- */
+
+.toasts {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  pointer-events: none;
+  max-width: min(340px, calc(100vw - 36px));
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 15px;
+  border-radius: 13px;
+  border: 1px solid rgba(110, 231, 255, 0.4);
+  background: linear-gradient(180deg, rgba(20, 22, 44, 0.97), rgba(12, 12, 26, 0.97));
+  backdrop-filter: blur(12px);
+  box-shadow: 0 18px 40px -18px #000, 0 0 26px -12px var(--accent);
+  animation: toast-in 0.5s cubic-bezier(0.2, 1.3, 0.35, 1) both;
+}
+
+.toast.is-leaving {
+  animation: toast-out 0.35s ease forwards;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(40px) scale(0.9);
+  }
+}
+
+@keyframes toast-out {
+  to {
+    opacity: 0;
+    transform: translateX(40px) scale(0.95);
+  }
+}
+
+.toast-icon {
+  font-size: 24px;
+  flex: 0 0 auto;
+  animation: toast-pop 0.6s cubic-bezier(0.2, 1.6, 0.4, 1) 0.1s both;
+}
+
+@keyframes toast-pop {
+  from {
+    transform: scale(0) rotate(-25deg);
+  }
+}
+
+.toast-label {
+  font-size: 10.5px;
+  letter-spacing: 0.18em;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.toast-name {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.toast-desc {
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+@media (max-width: 620px) {
+  .toasts {
+    left: 12px;
+    right: 12px;
+    bottom: 12px;
+    max-width: none;
   }
 }

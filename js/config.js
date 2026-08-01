@@ -27,14 +27,21 @@ export const CONFIG = {
   leaderboardLimit: 100,
 };
 
+/** Directory the game is served from, with a trailing slash. */
+export function baseUri() {
+  const { origin, pathname } = window.location;
+  return origin + pathname.replace(/(index|callback)\.html$/, '');
+}
+
 /**
- * The OAuth2 redirect URI, derived from wherever the game is actually served.
- * Discord requires an exact match, so the setup panel prints this string for
- * copy-pasting into the developer portal.
+ * The OAuth2 redirect URI. Discord requires an exact match, so the help panel
+ * prints this string for copy-pasting into the developer portal.
+ *
+ * Both the popup flow and the redirect fallback land on callback.html, so there
+ * is only ever one URI to register.
  */
 export function redirectUri() {
-  const { origin, pathname } = window.location;
-  return origin + pathname.replace(/index\.html$/, '');
+  return baseUri() + 'callback.html';
 }
 
 /**

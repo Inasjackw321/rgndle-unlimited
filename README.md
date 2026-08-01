@@ -2,8 +2,9 @@
 
 Roll a nine-digit number. Fifteen factors judge it. Find out how rare your luck really was.
 
-A static, dependency-free web game: slot-machine reels, a rarity-weighted scoring engine, Discord
-sign-in, and a leaderboard — all running on GitHub Pages with no build step and no server.
+A static, dependency-free web game: slot-machine reels, a rarity-weighted scoring engine, a verifiable
+Daily Challenge, 41 achievements, shareable cards, Discord sign-in and leaderboards — all running on
+GitHub Pages with no build step and no server.
 
 ---
 
@@ -70,6 +71,47 @@ Two consequences worth knowing:
   actually matters — that `percentileOf(s)` equals the true fraction of rolls scoring below `s` — and
   reports band shares as information only.
 
+## Daily Challenge
+
+One roll per player per UTC day, derived deterministically from `(date, playerId)`:
+
+```js
+dailyRoll(day, playerId)   // -> the same nine digits, every time
+```
+
+Two things follow from that:
+
+- **You cannot reroll it.** Refreshing, clearing storage or opening a different browser all reproduce
+  the same digits. The button locks to `PLAYED` with a countdown to the next one.
+- **It is the one mode a server can fully verify.** The Worker recomputes your roll from your
+  authenticated Discord ID and the date, and ignores whatever digits the client sent. A Daily
+  submission cannot claim a roll you didn't get.
+
+The derivation is public, so you can compute future days in advance. That's harmless — knowing
+tomorrow's roll doesn't let you change it.
+
+The Daily deliberately has no streak or time multipliers: it's a single fixed roll, so session
+multipliers would make the board depend on how much you'd played beforehand.
+
+Fairness was checked against the crypto-random baseline over 240,000 derived rolls — digit
+frequencies land within ±0.5% of uniform, and the score median and 99th percentile match the endless
+mode exactly.
+
+## Achievements
+
+41 of them, evaluated after every roll and stored locally: rank milestones, score milestones, pattern
+finds (palindromes, straights, primes, perfect squares), the cultural numbers, multiplier and streak
+feats, and Daily streaks. Six are secret and stay masked in the list until earned. Unlocks arrive as
+toasts.
+
+## Sharing
+
+- **Copy image** renders a 1200×630 card on a canvas — digits, rank badge, score, rarity and top
+  factors — and puts the PNG on your clipboard, falling back to a download where browsers don't allow
+  image clipboard writes.
+- **Copy for Discord** produces a message with a fenced block, which Discord renders as a monospace
+  card.
+
 ## Running it locally
 
 ```bash
@@ -100,10 +142,17 @@ The game uses the OAuth2 **implicit grant** (`response_type=token`). That is wha
 on a static host: the access token comes back in the URL fragment, so there is no token exchange,
 **no client secret, and no server**. Only the `identify` scope is requested — username and avatar.
 
+Sign-in happens in a **popup**, so the page (and the roll you're looking at) is never torn down by a
+full-page navigation. If the popup is blocked it falls back to a normal redirect. Both routes land on
+`callback.html`, which posts the result back to the opener or stashes it and returns you to the game —
+so there is only ever **one redirect URI to register**.
+
+### Setup
+
 1. Create an application at <https://discord.com/developers/applications>.
-2. **OAuth2 → Redirects**, add the exact URL the game is served from, including the trailing slash:
+2. **OAuth2 → Redirects**, add exactly:
    ```
-   https://<your-username>.github.io/<your-repo>/
+   https://<your-username>.github.io/<your-repo>/callback.html
    ```
    The in-game help dialog (`?`) prints the exact string to paste.
 3. Put the **Client ID** into `js/config.js`:
@@ -117,11 +166,23 @@ For local testing, skip editing the file and set an override in the browser cons
 localStorage.rngdle_client_id = '1234567890123456789';
 ```
 
-(Add `http://localhost:8080/` as a redirect URI too.)
+(Add `http://localhost:8080/callback.html` as a redirect URI too.)
 
-The token is stored in `localStorage` and scrubbed from the address bar immediately on return. The
-OAuth `state` parameter is generated and checked on the way back. Leave `discordClientId` empty and
-the game runs fine in guest mode.
+### Session handling
+
+- The token is stored in `localStorage` and scrubbed from the address bar immediately on return, and
+  the OAuth `state` parameter is generated and checked on the way back.
+- Implicit-grant tokens last seven days and **cannot be refreshed**, so the game manages the lifecycle
+  instead of dropping you silently: within 12 hours of expiry the chip shows a **Renew** button, and a
+  browser that has signed in before gets a **Reconnect** button rather than a cold sign-in prompt.
+- Both use `prompt=none`, which returns immediately for anyone who has already authorised the app — so
+  reconnecting is a single click with no consent screen. If Discord says interaction is required, it
+  retries with the real prompt automatically.
+- A `401` from the leaderboard mid-session triggers one silent re-auth and a retry before giving up.
+- Signing in **migrates your guest scores** to your Discord identity rather than appearing to wipe the
+  board.
+
+Leave `discordClientId` empty and the game runs fine in guest mode.
 
 ## Leaderboard
 
@@ -141,34 +202,53 @@ Then set the endpoint in `js/config.js`:
 leaderboardEndpoint: 'https://rngdle-leaderboard.<your-subdomain>.workers.dev',
 ```
 
-The Worker verifies the Discord bearer token, rate-limits submissions, and keeps one personal-best
-row per player.
+The Worker verifies the Discord bearer token, rate-limits submissions, and keeps one personal-best row
+per player on the all-time board plus one row per player per day on the Daily board (kept ~40 days).
+
+### Channel announcements
+
+The Worker can post big rolls to a Discord channel. The webhook URL is a **Worker secret**, never
+client config, so nobody can read it out of the page and spam your channel:
+
+```bash
+npx wrangler secret put ANNOUNCE_WEBHOOK      # a channel webhook URL
+```
+
+`ANNOUNCE_MIN_RANK` in `wrangler.toml` sets the threshold (default `SS`). Announcements are fired with
+`ctx.waitUntil`, so a Discord outage never delays or fails a score submission.
 
 ### Trust model — please read before deploying the Worker
 
-The roll happens in the browser, so a determined user can submit a roll they did not honestly
-generate. What the Worker enforces is that a submitted score is **arithmetically consistent with its
-digits**: it recomputes the base score from the digits using the same engine the client uses, checks
-the cosmic multiplier against the real weight table, and bounds the remaining multipliers. That stops
-`{"score": 99999999}` outright. It cannot stop someone from claiming they rolled `123456789`.
+**The Daily board is fully verified.** The roll is a pure function of the UTC date and your Discord
+user ID, so the Worker recomputes it and ignores the client's claims entirely. It cannot be faked and
+cannot be rerolled.
 
-Genuinely cheat-proof scoring would require generating rolls server-side, which is out of scope for a
-static front end. If that matters for your deployment, move `rollDigits`/`rollCosmic` into the Worker
-and have the client request a roll rather than report one.
+**The all-time board is not, and cannot be on a static front end.** The endless roll happens in the
+browser. What the Worker enforces is that a submitted score is **arithmetically consistent with its
+digits**: it recomputes the base score using the same engine the client uses, checks the cosmic
+multiplier against the real weight table, and bounds the rest. That stops `{"score": 99999999}`
+outright. It cannot stop someone from claiming they rolled `123456789`.
+
+If that matters for your deployment, prefer the Daily board — or move `rollDigits`/`rollCosmic` into
+the Worker and have the client request a roll rather than report one.
 
 ## Layout
 
 ```
 index.html                  markup and DOM contract
+callback.html               OAuth2 landing page (popup + redirect, one URI)
 styles.css                  all visuals and animation
 js/scoring.js               the scoring engine — pure, runs in browser and Node alike
 js/percentiles.js           GENERATED quantile table
 js/ranks.js                 score -> percentile -> rank
+js/daily.js                 deterministic Daily Challenge (shared with the Worker)
+js/achievements.js          achievement definitions and unlock state
+js/share.js                 PNG share card and Discord text
 js/reels.js                 slot-machine reel mechanics
 js/fx.js                    starfield, particle bursts, count-up, screen shake
 js/audio.js                 synthesised sound (no audio files)
-js/discord.js               OAuth2 implicit grant
-js/leaderboard.js           local and remote board adapters
+js/discord.js               OAuth2 implicit grant, popup flow, session lifecycle
+js/leaderboard.js           local and remote board adapters, both scopes
 js/ui.js                    rendering
 js/main.js                  game loop and wiring
 tools/gen-percentiles.mjs   Monte Carlo -> js/percentiles.js

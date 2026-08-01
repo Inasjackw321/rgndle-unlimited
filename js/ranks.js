@@ -77,6 +77,9 @@ export function describeRarity(percentile) {
   if (capped) {
     return { top, oneIn, capped, text: `rarer than 1 in ${RESOLUTION_LIMIT.toLocaleString()}` };
   }
+  if (percentile < 0.01) {
+    return { top, oneIn, capped, text: 'about as low as it goes' };
+  }
   if (percentile < 0.5) {
     return { top, oneIn, capped, text: `beats ${(percentile * 100).toFixed(1)}% of rolls` };
   }

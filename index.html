@@ -67,10 +67,22 @@
           </div>
         </div>
 
+        <div class="mode-switch" role="tablist" aria-label="Game mode">
+          <button class="mode is-active" type="button" role="tab" aria-selected="true" data-mode="endless">
+            Endless
+          </button>
+          <button class="mode" type="button" role="tab" aria-selected="false" data-mode="daily">
+            Daily
+            <span class="mode-dot" id="daily-dot" hidden aria-label="not played yet"></span>
+          </button>
+        </div>
+
         <button id="roll-btn" class="roll-btn" type="button">
           <span class="roll-btn-label">ROLL</span>
           <span class="roll-btn-sub">press space</span>
         </button>
+
+        <div class="daily-status" id="daily-status" hidden></div>
 
         <div class="verdict" id="verdict" data-state="empty">
           <div class="verdict-rank" id="verdict-rank" aria-hidden="true"></div>
@@ -78,6 +90,10 @@
             <div class="verdict-score" id="verdict-score">0</div>
             <div class="verdict-rarity" id="verdict-rarity"></div>
             <div class="verdict-meta" id="verdict-meta"></div>
+            <div class="share-row" id="share-row" hidden>
+              <button type="button" class="share-btn" id="share-card">Copy image</button>
+              <button type="button" class="share-btn" id="share-text">Copy for Discord</button>
+            </div>
           </div>
         </div>
 
@@ -91,9 +107,18 @@
           </button>
           <button class="tab" role="tab" data-panel="history" aria-selected="false">History</button>
           <button class="tab" role="tab" data-panel="stats" aria-selected="false">Stats</button>
+          <button class="tab" role="tab" data-panel="awards" aria-selected="false">Awards</button>
         </div>
 
         <div class="panel is-active" data-panel="leaderboard">
+          <div class="scope-switch" role="tablist" aria-label="Leaderboard scope">
+            <button class="scope is-active" type="button" role="tab" aria-selected="true" data-scope="all">
+              All-time
+            </button>
+            <button class="scope" type="button" role="tab" aria-selected="false" data-scope="daily">
+              Today
+            </button>
+          </div>
           <div class="panel-note" id="board-note"></div>
           <ol class="board" id="board"></ol>
         </div>
@@ -105,8 +130,18 @@
         <div class="panel" data-panel="stats">
           <dl class="stats" id="stats"></dl>
         </div>
+
+        <div class="panel" data-panel="awards">
+          <div class="awards-progress">
+            <div class="awards-bar"><span id="awards-fill"></span></div>
+            <div class="panel-note" id="awards-count"></div>
+          </div>
+          <ul class="awards" id="awards"></ul>
+        </div>
       </aside>
     </main>
+
+    <div class="toasts" id="toasts" aria-live="polite" aria-atomic="false"></div>
 
     <dialog id="help-dialog" class="dialog">
       <article>
@@ -136,6 +171,13 @@
         <p id="help-calibration">
           Ranks are not arbitrary thresholds. The scoring engine was run over millions of simulated rolls, and
           your rank is your position in that distribution. "Top 0.01%" means exactly that.
+        </p>
+        <h3>Daily Challenge</h3>
+        <p>
+          One roll per player per UTC day, derived from your player ID and the date. You cannot reroll it —
+          refreshing or switching browsers reproduces the same nine digits. It is also the only mode a server
+          can fully verify, since the Daily leaderboard recomputes your roll rather than taking your word for
+          it.
         </p>
         <h3>Setup</h3>
         <p id="help-setup"></p>

@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Signing in…</title>
+    <meta name="color-scheme" content="dark" />
+    <style>
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        background: #07070f;
+        color: #eef0f8;
+        font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+        text-align: center;
+        padding: 24px;
+      }
+      .spinner {
+        width: 34px;
+        height: 34px;
+        margin: 0 auto 16px;
+        border: 3px solid rgba(255, 255, 255, 0.15);
+        border-top-color: #6ee7ff;
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      p {
+        color: #8b90a8;
+        font-size: 14px;
+      }
+      a {
+        color: #6ee7ff;
+      }
+    </style>
+  </head>
+  <body>
+    <div>
+      <div class="spinner" id="spinner"></div>
+      <p id="status">Completing sign-in…</p>
+    </div>
+
+    <script type="module">
+      /**
+       * OAuth2 landing page. Handles both ways the game can sign in:
+       *
+       *   popup    — post the result back to the opener and close.
+       *   redirect — stash the result and navigate back to the game.
+       *
+       * Using one page for both means only a single redirect URI has to be
+       * registered in the Discord developer portal.
+       */
+      import { baseUri } from './js/config.js';
+
+      const PENDING_KEY = 'rngdle_pending_auth';
+      const params = new URLSearchParams(window.location.hash.slice(1));
+
+      const payload = {
+        type: 'rngdle-auth',
+        token: params.get('access_token'),
+        expiresIn: Number(params.get('expires_in') || 604800),
+        state: params.get('state'),
+        error: params.get('error'),
+        errorDescription: params.get('error_description'),
+      };
+
+      // Don't leave the token sitting in the address bar or in history.
+      history.replaceState(null, '', window.location.pathname);
+
+      if (window.opener && !window.opener.closed) {
+        window.opener.postMessage(payload, window.location.origin);
+        window.close();
+        // If the browser refuses to close the popup, say something useful.
+        document.getElementById('status').textContent = 'Done — you can close this window.';
+        document.getElementById('spinner').remove();
+      } else {
+        try {
+          sessionStorage.setItem(PENDING_KEY, JSON.stringify(payload));
+        } catch {
+          /* storage blocked; the game will simply show as signed out */
+        }
+        window.location.replace(baseUri());
+      }
+    </script>
+    <noscript>
+      <p>JavaScript is required to complete sign-in.</p>
+    </noscript>
+  </body>
+</html>
