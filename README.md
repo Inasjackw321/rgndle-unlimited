@@ -149,24 +149,30 @@ so there is only ever **one redirect URI to register**.
 
 ### Setup
 
-1. Create an application at <https://discord.com/developers/applications>.
-2. **OAuth2 → Redirects**, add exactly:
+The quickest route needs no code changes at all. Open the game and press **Set up Discord sign-in** in
+the top right — the dialog walks through it, prints the exact redirect URL for wherever the game is
+running with a copy button, and signs you in as soon as you save.
+
+Behind that dialog, the steps are:
+
+1. Create an application at <https://discord.com/developers/applications> (**New Application**).
+2. **OAuth2 → Redirects**, add the exact URL the game is served from, plus `callback.html`:
    ```
    https://<your-username>.github.io/<your-repo>/callback.html
    ```
-   The in-game help dialog (`?`) prints the exact string to paste.
-3. Put the **Client ID** into `js/config.js`:
-   ```js
-   discordClientId: '1234567890123456789',
-   ```
+   Locally that's `http://localhost:8080/callback.html`. Press **Save Changes**.
+3. Copy the **Client ID** from the same page and paste it into the dialog.
 
-For local testing, skip editing the file and set an override in the browser console:
+Settings entered in the dialog are stored in that browser only, which is ideal for trying it out. To
+enable sign-in for **everyone** who visits your deployment, put the same value in `js/config.js` and
+redeploy:
 
 ```js
-localStorage.rngdle_client_id = '1234567890123456789';
+discordClientId: '1234567890123456789',
 ```
 
-(Add `http://localhost:8080/callback.html` as a redirect URI too.)
+A client ID is public information — it ships to the browser either way. The thing you must never
+commit is the client *secret*, and the implicit flow never needs one.
 
 ### Session handling
 

@@ -143,6 +143,75 @@
 
     <div class="toasts" id="toasts" aria-live="polite" aria-atomic="false"></div>
 
+    <dialog id="setup-dialog" class="dialog">
+      <article>
+        <h2>Set up Discord sign-in</h2>
+        <p>
+          Sign-in needs a Discord application, which takes about a minute to create. Nothing secret is
+          involved — a client ID is public, which is why this game needs no server.
+        </p>
+
+        <h3>1. Create the application</h3>
+        <p>
+          Open the
+          <a href="https://discord.com/developers/applications" target="_blank" rel="noopener noreferrer"
+            >Discord developer portal</a
+          >
+          and press <strong>New Application</strong>. Name it whatever you like.
+        </p>
+
+        <h3>2. Register this redirect URL</h3>
+        <p>
+          In your application, go to <strong>OAuth2 &rarr; Redirects</strong> and add this exact URL, then
+          press Save Changes:
+        </p>
+        <div class="copy-field">
+          <code id="setup-redirect"></code>
+          <button type="button" class="share-btn" id="copy-redirect">Copy</button>
+        </div>
+
+        <h3>3. Paste your Client ID</h3>
+        <p>Still on the OAuth2 page, copy the <strong>Client ID</strong> and paste it here.</p>
+        <form id="setup-form">
+          <label class="field">
+            <span>Client ID</span>
+            <input
+              id="setup-client-id"
+              type="text"
+              inputmode="numeric"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="1234567890123456789"
+            />
+          </label>
+          <label class="field">
+            <span>Leaderboard endpoint <em>(optional)</em></span>
+            <!-- Deliberately type=text: type=url hands validation to the browser,
+                 whose native bubble bypasses the in-dialog error message. -->
+            <input
+              id="setup-endpoint"
+              type="text"
+              inputmode="url"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="https://rngdle-leaderboard.you.workers.dev"
+            />
+          </label>
+          <p class="field-error" id="setup-error" hidden></p>
+          <div class="setup-actions">
+            <button type="submit" class="discord-btn">Save &amp; sign in</button>
+            <button type="button" class="share-btn" id="setup-clear">Clear</button>
+          </div>
+        </form>
+
+        <p class="fine-print">
+          Saved in this browser only. To set it for everyone, put the same values in
+          <code>js/config.js</code> and redeploy.
+        </p>
+      </article>
+      <button class="dialog-close" type="button">Close</button>
+    </dialog>
+
     <dialog id="help-dialog" class="dialog">
       <article>
         <h2>How the score works</h2>
@@ -181,6 +250,9 @@
         </p>
         <h3>Setup</h3>
         <p id="help-setup"></p>
+        <p class="setup-actions">
+          <button type="button" class="share-btn" id="open-setup">Configure Discord sign-in</button>
+        </p>
       </article>
       <button class="dialog-close" type="button">Close</button>
     </dialog>

@@ -44,22 +44,50 @@ export function redirectUri() {
   return baseUri() + 'callback.html';
 }
 
+const CLIENT_ID_KEY = 'rngdle_client_id';
+const ENDPOINT_KEY = 'rngdle_endpoint';
+
 /**
- * Local overrides for development, set from the browser console:
- *   localStorage.rngdle_client_id = '123…'
- * Saves editing this file just to test auth on localhost.
+ * Per-browser overrides, written by the in-app setup dialog. They let someone
+ * enable sign-in on a deployment they can't edit — and let you test auth on
+ * localhost without touching this file.
  */
-export function resolved() {
-  let overrides = {};
+export function saveOverrides({ discordClientId, leaderboardEndpoint }) {
   try {
-    overrides = {
-      discordClientId: localStorage.getItem('rngdle_client_id') || undefined,
-      leaderboardEndpoint: localStorage.getItem('rngdle_endpoint') || undefined,
+    if (discordClientId) localStorage.setItem(CLIENT_ID_KEY, discordClientId);
+    else localStorage.removeItem(CLIENT_ID_KEY);
+
+    if (leaderboardEndpoint) localStorage.setItem(ENDPOINT_KEY, leaderboardEndpoint);
+    else localStorage.removeItem(ENDPOINT_KEY);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function clearOverrides() {
+  return saveOverrides({});
+}
+
+/** The overrides currently in effect, for pre-filling the setup form. */
+export function overrides() {
+  try {
+    return {
+      discordClientId: localStorage.getItem(CLIENT_ID_KEY) || '',
+      leaderboardEndpoint: localStorage.getItem(ENDPOINT_KEY) || '',
     };
   } catch {
-    /* storage blocked — fall back to the committed config */
+    return { discordClientId: '', leaderboardEndpoint: '' };
   }
+}
+
+/** Discord snowflakes are 17-20 digit numbers. */
+export function isValidClientId(value) {
+  return /^\d{17,20}$/.test(value.trim());
+}
+
+export function resolved() {
   const merged = { ...CONFIG };
-  for (const [k, v] of Object.entries(overrides)) if (v) merged[k] = v;
+  for (const [key, value] of Object.entries(overrides())) if (value) merged[key] = value;
   return merged;
 }

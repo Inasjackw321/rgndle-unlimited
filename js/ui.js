@@ -21,7 +21,10 @@ const PLACEHOLDER_AVATAR =
  * Auth chip
  * ------------------------------------------------------------------ */
 
-export function renderAuth(session, { onLogin, onLogout, onReconnect, configured, canReconnect, expiring }) {
+export function renderAuth(
+  session,
+  { onLogin, onLogout, onReconnect, onSetup, configured, canReconnect, expiring },
+) {
   const slot = el('auth-slot');
   slot.replaceChildren();
 
@@ -84,15 +87,19 @@ export function renderAuth(session, { onLogin, onLogout, onReconnect, configured
   btn.innerHTML =
     '<svg viewBox="0 0 24 18" aria-hidden="true" class="discord-logo"><path fill="currentColor" d="M20.3 1.6A19.8 19.8 0 0 0 15.4.1a14 14 0 0 0-.6 1.3 18.3 18.3 0 0 0-5.5 0A13.9 13.9 0 0 0 8.6.1a19.7 19.7 0 0 0-4.9 1.5C.6 6.2-.2 10.7.2 15.1a19.9 19.9 0 0 0 6 3 14.7 14.7 0 0 0 1.3-2.1 12.9 12.9 0 0 1-2-1c.2-.1.3-.2.5-.4a14.2 14.2 0 0 0 12.1 0l.5.4a12.9 12.9 0 0 1-2 1 14.5 14.5 0 0 0 1.2 2.1 19.8 19.8 0 0 0 6-3c.5-5.1-.8-9.6-3.5-13.5ZM8 12.4c-1.2 0-2.2-1.1-2.2-2.4S6.8 7.6 8 7.6s2.2 1.1 2.2 2.4-1 2.4-2.2 2.4Zm8 0c-1.2 0-2.2-1.1-2.2-2.4s1-2.4 2.2-2.4 2.2 1.1 2.2 2.4-1 2.4-2.2 2.4Z"/></svg><span>Sign in with Discord</span>';
 
+  // Not configured yet: offer the setup flow rather than a dead button.
   if (!configured) {
-    btn.disabled = true;
-    btn.title = 'Set your Discord client ID in js/config.js to enable sign-in';
-    btn.style.opacity = '0.5';
-    btn.style.cursor = 'not-allowed';
-  } else {
-    btn.addEventListener('click', onLogin);
+    const setup = document.createElement('button');
+    setup.className = 'setup-btn';
+    setup.type = 'button';
+    setup.innerHTML =
+      '<svg viewBox="0 0 24 18" aria-hidden="true" class="discord-logo"><path fill="currentColor" d="M20.3 1.6A19.8 19.8 0 0 0 15.4.1a14 14 0 0 0-.6 1.3 18.3 18.3 0 0 0-5.5 0A13.9 13.9 0 0 0 8.6.1a19.7 19.7 0 0 0-4.9 1.5C.6 6.2-.2 10.7.2 15.1a19.9 19.9 0 0 0 6 3 14.7 14.7 0 0 0 1.3-2.1 12.9 12.9 0 0 1-2-1c.2-.1.3-.2.5-.4a14.2 14.2 0 0 0 12.1 0l.5.4a12.9 12.9 0 0 1-2 1 14.5 14.5 0 0 0 1.2 2.1 19.8 19.8 0 0 0 6-3c.5-5.1-.8-9.6-3.5-13.5ZM8 12.4c-1.2 0-2.2-1.1-2.2-2.4S6.8 7.6 8 7.6s2.2 1.1 2.2 2.4-1 2.4-2.2 2.4Zm8 0c-1.2 0-2.2-1.1-2.2-2.4s1-2.4 2.2-2.4 2.2 1.1 2.2 2.4-1 2.4-2.2 2.4Z"/></svg><span>Set up Discord sign-in</span>';
+    setup.addEventListener('click', onSetup);
+    slot.append(setup);
+    return;
   }
 
+  btn.addEventListener('click', onLogin);
   slot.append(btn);
 }
 

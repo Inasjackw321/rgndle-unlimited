@@ -12,7 +12,14 @@ import * as board from './leaderboard.js';
 import * as daily from './daily.js';
 import * as achievements from './achievements.js';
 import * as share from './share.js';
-import { resolved, redirectUri } from './config.js';
+import {
+  resolved,
+  redirectUri,
+  overrides,
+  saveOverrides,
+  clearOverrides,
+  isValidClientId,
+} from './config.js';
 import * as ui from './ui.js';
 
 const HISTORY_KEY = 'rngdle_history';
@@ -341,15 +348,103 @@ function setupHelp() {
     `Ranks are not arbitrary thresholds. The scoring engine was run over ${SAMPLE_SIZE.toLocaleString()} ` +
     'simulated rolls, and your rank is your position in that distribution. "Top 0.01%" means exactly that.';
 
-  const cfg = resolved();
+  setupHelpText();
+}
+
+function setupHelpText() {
   const setup = ui.el('help-setup');
-  if (cfg.discordClientId) {
-    setup.innerHTML = `Sign-in is enabled. The leaderboard is ${
+  if (resolved().discordClientId) {
+    setup.textContent = `Discord sign-in is enabled. The leaderboard is ${
       board.isShared() ? 'shared across all players.' : 'stored on this device only.'
     }`;
   } else {
-    setup.innerHTML = `Discord sign-in is not configured yet. Add your application's client ID to <code>js/config.js</code> and register this redirect URI in the Discord developer portal: <code>${redirectUri()}</code>`;
+    setup.textContent =
+      'Discord sign-in is not configured yet. It takes about a minute and needs no server — a client ID is public.';
   }
+}
+
+function setupSetupDialog() {
+  const dialog = ui.el('setup-dialog');
+  const form = ui.el('setup-form');
+  const clientIdInput = ui.el('setup-client-id');
+  const endpointInput = ui.el('setup-endpoint');
+  const error = ui.el('setup-error');
+
+  ui.el('setup-redirect').textContent = redirectUri();
+
+  const open = () => {
+    const current = overrides();
+    clientIdInput.value = current.discordClientId || resolved().discordClientId || '';
+    endpointInput.value = current.leaderboardEndpoint || resolved().leaderboardEndpoint || '';
+    error.hidden = true;
+    dialog.showModal();
+    clientIdInput.focus();
+  };
+
+  ui.el('open-setup').addEventListener('click', () => {
+    ui.el('help-dialog').close();
+    open();
+  });
+
+  dialog.querySelector('.dialog-close').addEventListener('click', () => dialog.close());
+  dialog.addEventListener('click', (e) => {
+    if (e.target === dialog) dialog.close();
+  });
+
+  const copyBtn = ui.el('copy-redirect');
+  copyBtn.addEventListener('click', async () => {
+    const ok = await share.copyText(redirectUri());
+    ui.flashButton(copyBtn, ok ? 'Copied!' : 'Select it');
+  });
+
+  ui.el('setup-clear').addEventListener('click', () => {
+    clearOverrides();
+    // Without a client ID the session could never be renewed, so ending it
+    // here is clearer than leaving a chip that can't re-authenticate.
+    auth.logout();
+    clientIdInput.value = '';
+    endpointInput.value = '';
+    error.hidden = true;
+    dialog.close();
+    setupHelpText();
+    paintAuth(auth.currentSession());
+    refreshBoard();
+  });
+
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const clientId = clientIdInput.value.trim();
+    const endpoint = endpointInput.value.trim();
+
+    if (!isValidClientId(clientId)) {
+      error.textContent =
+        'That does not look like a client ID. It is a number of 17 to 20 digits — copy it from the OAuth2 page, not the application name.';
+      error.hidden = false;
+      clientIdInput.focus();
+      return;
+    }
+    if (endpoint && !/^https?:\/\//.test(endpoint)) {
+      error.textContent = 'The leaderboard endpoint must start with https://';
+      error.hidden = false;
+      endpointInput.focus();
+      return;
+    }
+
+    if (!saveOverrides({ discordClientId: clientId, leaderboardEndpoint: endpoint })) {
+      error.textContent = 'This browser is blocking storage, so settings cannot be saved here.';
+      error.hidden = false;
+      return;
+    }
+
+    dialog.close();
+    paintAuth(auth.currentSession());
+    setupHelpText();
+    // Straight into the popup — the click that submitted the form is a user
+    // gesture, so it won't be blocked.
+    signIn({ silent: false });
+  });
+
+  return { open };
 }
 
 function setupSound() {
@@ -428,11 +523,14 @@ function setupModes() {
   });
 }
 
+let openSetup = () => {};
+
 function paintAuth(session) {
   ui.renderAuth(session, {
     configured: auth.isConfigured(),
     canReconnect: auth.hasSignedInBefore(),
     expiring: auth.needsRenewal(),
+    onSetup: () => openSetup(),
     onLogin: () => signIn({ silent: false }),
     onReconnect: () => signIn({ silent: true }),
     onLogout: () => {
@@ -474,6 +572,7 @@ async function init() {
   setupKeyboard();
   setupShare();
   setupModes();
+  openSetup = setupSetupDialog().open;
 
   loadHistory();
   ui.renderHistory(state.history);
