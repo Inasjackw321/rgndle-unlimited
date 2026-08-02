@@ -190,6 +190,22 @@ commit is the client *secret*, and the implicit flow never needs one.
 
 Leave `discordClientId` empty and the game runs fine in guest mode.
 
+## What signing in gets you
+
+Roll history, achievements and the Daily streak are stored **per identity**, namespaced by player ID
+(`rngdle_history::250058956905955328`). Signing in therefore swaps the whole profile rather than just
+changing the name on the leaderboard, and two people sharing a browser never see each other's
+progress.
+
+Guest progress is **moved** onto your account the first time you sign in, so signing in never looks
+like it wiped everything. It is a move rather than a copy on purpose: if the guest profile survived,
+the next person to sign in on a shared browser would inherit the same session and start with someone
+else's history. An account that already has its own progress keeps it — nothing is merged over the
+top.
+
+Storage is per-browser. To make a profile follow you between devices it would need to live in the
+Worker; the leaderboard already does, the rest does not.
+
 ## Leaderboard
 
 By default the leaderboard lives in `localStorage` — per-device, works offline, no setup.

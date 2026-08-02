@@ -6,7 +6,7 @@
  * plus running totals, and returns true to unlock.
  */
 
-const STORE_KEY = 'rngdle_achievements';
+import { STORES, read, write } from './profile.js';
 
 const has = (ctx, name) => ctx.result.factors.some((f) => f.name === name);
 const factor = (ctx, name) => ctx.result.factors.find((f) => f.name === name);
@@ -106,20 +106,8 @@ export const ACHIEVEMENTS = [
 
 /* ------------------------------------------------------------------ */
 
-export function loadUnlocked() {
-  try {
-    return JSON.parse(localStorage.getItem(STORE_KEY) || '{}');
-  } catch {
-    return {};
-  }
-}
-
-function save(unlocked) {
-  try {
-    localStorage.setItem(STORE_KEY, JSON.stringify(unlocked));
-  } catch {
-    /* ignore */
-  }
+export function loadUnlocked(playerId) {
+  return read(STORES.achievements, playerId, {});
 }
 
 /**
@@ -127,7 +115,7 @@ function save(unlocked) {
  * @returns {Array} the definitions unlocked by *this* roll
  */
 export function evaluate(ctx) {
-  const unlocked = loadUnlocked();
+  const unlocked = loadUnlocked(ctx.playerId);
   const fresh = [];
 
   for (const achievement of ACHIEVEMENTS) {
@@ -144,11 +132,11 @@ export function evaluate(ctx) {
     }
   }
 
-  if (fresh.length) save(unlocked);
+  if (fresh.length) write(STORES.achievements, ctx.playerId, unlocked);
   return fresh;
 }
 
-export function progress() {
-  const unlocked = loadUnlocked();
+export function progress(playerId) {
+  const unlocked = loadUnlocked(playerId);
   return { unlocked, count: Object.keys(unlocked).length, total: ACHIEVEMENTS.length };
 }

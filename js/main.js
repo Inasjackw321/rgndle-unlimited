@@ -12,6 +12,7 @@ import * as board from './leaderboard.js';
 import * as daily from './daily.js';
 import * as achievements from './achievements.js';
 import * as share from './share.js';
+import * as profile from './profile.js';
 import {
   resolved,
   redirectUri,
@@ -21,9 +22,6 @@ import {
   isValidClientId,
 } from './config.js';
 import * as ui from './ui.js';
-
-const HISTORY_KEY = 'rngdle_history';
-const DAILY_STREAK_KEY = 'rngdle_daily_streak';
 
 const state = {
   rolling: false,
@@ -64,22 +62,13 @@ function playerId() {
  * ------------------------------------------------------------------ */
 
 function loadHistory() {
-  try {
-    const raw = localStorage.getItem(HISTORY_KEY);
-    state.history = raw ? JSON.parse(raw) : [];
-  } catch {
-    state.history = [];
-  }
+  state.history = profile.read(profile.STORES.history, playerId(), []);
 }
 
 function saveHistory(entry) {
   state.history.unshift(entry);
   state.history = state.history.slice(0, resolved().historyLimit);
-  try {
-    localStorage.setItem(HISTORY_KEY, JSON.stringify(state.history));
-  } catch {
-    /* ignore */
-  }
+  profile.write(profile.STORES.history, playerId(), state.history);
 }
 
 /* ------------------------------------------------------------------ *
@@ -87,11 +76,7 @@ function saveHistory(entry) {
  * ------------------------------------------------------------------ */
 
 function readDailyStreak() {
-  try {
-    return JSON.parse(localStorage.getItem(DAILY_STREAK_KEY) || '{"count":0,"last":null}');
-  } catch {
-    return { count: 0, last: null };
-  }
+  return profile.read(profile.STORES.dailyStreak, playerId(), { count: 0, last: null });
 }
 
 /** Increments when today follows yesterday, resets after any gap. */
@@ -101,13 +86,23 @@ function bumpDailyStreak(today = daily.dateKey()) {
 
   const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
   const count = record.last === yesterday ? record.count + 1 : 1;
-  const next = { count, last: today };
-  try {
-    localStorage.setItem(DAILY_STREAK_KEY, JSON.stringify(next));
-  } catch {
-    /* ignore */
-  }
+  profile.write(profile.STORES.dailyStreak, playerId(), { count, last: today });
   return count;
+}
+
+/**
+ * Repaints everything that belongs to the current identity. Called on load and
+ * whenever the signed-in account changes, so switching accounts swaps the whole
+ * profile rather than leaving the previous player's data on screen.
+ */
+function reloadProfile() {
+  loadHistory();
+  ui.renderHistory(state.history);
+  ui.renderStats(state.history);
+  ui.renderAwards(achievements.ACHIEVEMENTS, achievements.progress(playerId()).unlocked);
+  // The hot streak belongs to the player who built it, not to the browser tab.
+  state.streak = 0;
+  state.lastTotal = null;
 }
 
 /* ------------------------------------------------------------------ *
@@ -298,6 +293,7 @@ async function roll() {
 
   // Achievements
   const unlocked = achievements.evaluate({
+    playerId: me,
     result,
     rank,
     rankIndex,
@@ -316,8 +312,7 @@ async function roll() {
     }, 500 + i * 700);
   });
   if (unlocked.length) {
-    const { unlocked: all } = achievements.progress();
-    ui.renderAwards(achievements.ACHIEVEMENTS, all);
+    ui.renderAwards(achievements.ACHIEVEMENTS, achievements.progress(me).unlocked);
   }
 
   try {
@@ -402,6 +397,7 @@ function setupSetupDialog() {
     // Without a client ID the session could never be renewed, so ending it
     // here is clearer than leaving a chip that can't re-authenticate.
     auth.logout();
+    reloadProfile();
     clientIdInput.value = '';
     endpointInput.value = '';
     error.hidden = true;
@@ -535,6 +531,7 @@ function paintAuth(session) {
     onReconnect: () => signIn({ silent: true }),
     onLogout: () => {
       auth.logout();
+      reloadProfile();
       paintMode();
       refreshBoard();
     },
@@ -544,16 +541,22 @@ function paintAuth(session) {
 async function signIn({ silent }) {
   try {
     const session = await auth.login({ silent });
-    const moved = board.migrateGuestScores(session.user);
-    if (moved) {
-      ui.toast({
-        icon: '📦',
-        label: 'SIGNED IN',
-        name: `Welcome, ${auth.displayName(session.user)}`,
-        desc: 'Your guest scores moved across.',
-      });
-    }
+
+    const movedScores = board.migrateGuestScores(session.user);
+    const movedStores = profile.adoptGuestData(daily.guestId(), session.user.id);
+
+    ui.toast({
+      icon: movedScores || movedStores.length ? '📦' : '👋',
+      label: 'SIGNED IN',
+      name: `Welcome, ${auth.displayName(session.user)}`,
+      desc:
+        movedScores || movedStores.length
+          ? 'Your guest progress moved across.'
+          : 'Your progress is saved to this account.',
+    });
+
     ui.notice(null);
+    reloadProfile();
     paintMode();
     await refreshBoard();
   } catch (err) {
@@ -574,10 +577,10 @@ async function init() {
   setupModes();
   openSetup = setupSetupDialog().open;
 
-  loadHistory();
-  ui.renderHistory(state.history);
-  ui.renderStats(state.history);
-  ui.renderAwards(achievements.ACHIEVEMENTS, achievements.progress().unlocked);
+  // Upgrade any pre-namespacing data before the first read.
+  profile.migrateLegacy(daily.guestId());
+
+  reloadProfile();
   if (state.history.length) setDigits([...state.history[0].digits].map(Number));
 
   ui.el('roll-btn').addEventListener('click', roll);
@@ -586,6 +589,10 @@ async function init() {
 
   const authError = await auth.initAuth();
   if (authError) ui.notice(authError);
+
+  // Auth resolves asynchronously, so the first paint above used the guest
+  // profile. Repaint now that we know who is actually signed in.
+  if (auth.currentSession()) reloadProfile();
 
   paintMode();
   await refreshBoard();
