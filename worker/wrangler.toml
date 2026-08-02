@@ -11,6 +11,11 @@ ALLOWED_ORIGIN = "*"
 #   F D C B A S SS SSS ULTRA Ω
 ANNOUNCE_MIN_RANK = "SS"
 
+# Required to accept Google sign-ins: the Worker checks that every Google ID
+# token was issued for *this* client, otherwise a token minted for any other
+# site would be accepted here.
+# GOOGLE_CLIENT_ID = "123456-abc.apps.googleusercontent.com"
+
 # Create with:  npx wrangler kv namespace create RNGDLE
 # then paste the returned id below.
 [[kv_namespaces]]

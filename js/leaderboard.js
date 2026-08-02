@@ -10,7 +10,14 @@
  */
 
 import { resolved } from './config.js';
-import { currentSession, avatarUrl, displayName, recoverFromUnauthorized } from './discord.js';
+import {
+  currentSession,
+  currentUser,
+  playerKey,
+  hasFreshToken,
+  refreshToken,
+  recoverFromUnauthorized,
+} from './auth.js';
 import { dateKey, guestId } from './daily.js';
 
 const LOCAL_KEY = 'rngdle_leaderboard';
@@ -74,13 +81,14 @@ const LocalBoard = {
  * doesn't look like it wiped your board. Merges into an existing row if the
  * player already has one, keeping whichever score is higher.
  */
-export function migrateGuestScores(user) {
-  if (!user) return 0;
+export function migrateGuestScores(session) {
+  if (!session) return 0;
   const guest = guestId();
+  const accountId = playerKey(session);
   const identity = {
-    playerId: user.id,
-    name: displayName(user),
-    avatar: avatarUrl(user, 64),
+    playerId: accountId,
+    name: session.user.name,
+    avatar: session.user.avatar,
   };
 
   let moved = 0;
@@ -90,7 +98,7 @@ export function migrateGuestScores(user) {
 
   const best = mine.reduce((a, b) => (a.score >= b.score ? a : b));
   const rest = entries.filter((e) => e.playerId !== 'guest' && e.playerId !== guest);
-  const existing = rest.find((e) => e.playerId === user.id);
+  const existing = rest.find((e) => e.playerId === accountId);
 
   if (existing) {
     if (best.score > existing.score) Object.assign(existing, best, identity);
@@ -118,6 +126,7 @@ function remoteBoard(endpoint) {
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${session.token}`,
+        'X-Auth-Provider': session.provider,
       },
       body: JSON.stringify(body),
     });
@@ -148,6 +157,9 @@ function remoteBoard(endpoint) {
     },
 
     async submit(entry, { scope }) {
+      // The stored identity outlives the token (Google ID tokens last about an
+      // hour), so top it up before posting rather than eating a 401 first.
+      if (currentSession() && !hasFreshToken()) await refreshToken();
       return post('/scores', {
         mode: scope === 'daily' ? 'daily' : 'endless',
         day: entry.day,
@@ -174,11 +186,11 @@ export function isShared() {
 
 /** Builds the row we send/store for a completed roll. */
 export function entryFor(result, percentile, rank, { mode = 'endless' } = {}) {
-  const user = currentSession()?.user;
+  const user = currentUser();
   return {
-    playerId: user ? user.id : guestId(),
-    name: user ? displayName(user) : 'Guest',
-    avatar: user ? avatarUrl(user, 64) : null,
+    playerId: playerKey() || guestId(),
+    name: user ? user.name : 'Guest',
+    avatar: user ? user.avatar : null,
     score: result.total,
     digits: result.display,
     cosmic: result.cosmic?.value ?? 1,

@@ -1485,3 +1485,47 @@ body {
   background: rgba(88, 101, 242, 0.24);
   transform: translateY(-1px);
 }
+
+/* ---------------- Multi-provider sign-in ---------------- */
+
+.provider-row {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+}
+
+/* Google renders its own button here; reserve the space so the top bar
+   doesn't jump while GIS loads. */
+.google-host {
+  min-width: 200px;
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+}
+
+.google-host.is-failed {
+  font-size: 12px;
+  color: var(--muted);
+  max-width: 220px;
+  line-height: 1.35;
+}
+
+.provider-badge {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  font-size: 10px;
+  font-weight: 800;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.08);
+  flex: 0 0 auto;
+}
+
+.dialog .hint {
+  margin-top: 8px !important;
+  font-size: 12.5px !important;
+  color: var(--muted) !important;
+}

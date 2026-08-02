@@ -16,6 +16,11 @@
  *   the client sent. A daily submission cannot claim a roll the player didn't
  *   get, and cannot be rerolled.
  *
+ *   Both providers are verified server-side. Discord access tokens are checked
+ *   against the Discord API; Google ID tokens have their RS256 signature
+ *   verified against Google's published keys, with issuer, audience and expiry
+ *   all enforced. Set GOOGLE_CLIENT_ID or Google sign-ins are rejected.
+ *
  *   Endless mode is not, and cannot be on a static front end. The roll happens
  *   in the browser. What the Worker enforces is that a submitted score is
  *   arithmetically consistent with its digits: it recomputes the base score
@@ -41,7 +46,7 @@ function corsHeaders(env) {
   return {
     'Access-Control-Allow-Origin': env.ALLOWED_ORIGIN || '*',
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Auth-Provider',
     'Access-Control-Max-Age': '86400',
   };
 }
@@ -62,29 +67,126 @@ async function sha256(text) {
   return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
-/** Resolves a Discord bearer token to a user, with a short cache. */
-async function identify(token, env) {
-  const cacheKey = `token:${await sha256(token)}`;
-  const cached = await env.RNGDLE.get(cacheKey, 'json');
+const GOOGLE_JWKS = 'https://www.googleapis.com/oauth2/v3/certs';
+const GOOGLE_ISSUERS = ['https://accounts.google.com', 'accounts.google.com'];
+
+function base64UrlToBytes(value) {
+  const padded = value.replace(/-/g, '+').replace(/_/g, '/');
+  const binary = atob(padded.padEnd(Math.ceil(padded.length / 4) * 4, '='));
+  return Uint8Array.from(binary, (c) => c.charCodeAt(0));
+}
+
+function decodeSegment(segment) {
+  return JSON.parse(new TextDecoder().decode(base64UrlToBytes(segment)));
+}
+
+async function googleKeys(env) {
+  const cached = await env.RNGDLE.get('jwks:google', 'json');
   if (cached) return cached;
 
+  const res = await fetch(GOOGLE_JWKS);
+  if (!res.ok) throw new Error('could not fetch Google signing keys');
+  const jwks = await res.json();
+  // Google rotates these; an hour is well inside their cache headers.
+  await env.RNGDLE.put('jwks:google', JSON.stringify(jwks), { expirationTtl: 3600 });
+  return jwks;
+}
+
+/**
+ * Verifies a Google ID token properly: RS256 signature against Google's
+ * published keys, then issuer, audience and expiry. Decoding the payload
+ * without this would let anyone mint whatever identity they liked.
+ */
+async function verifyGoogleToken(jwt, env) {
+  if (!env.GOOGLE_CLIENT_ID) throw new Error('GOOGLE_CLIENT_ID is not configured on the Worker');
+
+  const parts = String(jwt).split('.');
+  if (parts.length !== 3) return null;
+  const [headerB64, payloadB64, signatureB64] = parts;
+
+  let header;
+  let claims;
+  try {
+    header = decodeSegment(headerB64);
+    claims = decodeSegment(payloadB64);
+  } catch {
+    return null;
+  }
+  if (header.alg !== 'RS256' || !header.kid) return null;
+
+  const { keys } = await googleKeys(env);
+  const jwk = keys.find((k) => k.kid === header.kid);
+  if (!jwk) return null;
+
+  const key = await crypto.subtle.importKey(
+    'jwk',
+    jwk,
+    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' },
+    false,
+    ['verify'],
+  );
+  const valid = await crypto.subtle.verify(
+    'RSASSA-PKCS1-v1_5',
+    key,
+    base64UrlToBytes(signatureB64),
+    new TextEncoder().encode(`${headerB64}.${payloadB64}`),
+  );
+  if (!valid) return null;
+
+  const now = Math.floor(Date.now() / 1000);
+  if (!GOOGLE_ISSUERS.includes(claims.iss)) return null;
+  if (claims.aud !== env.GOOGLE_CLIENT_ID) return null;
+  if (!claims.exp || claims.exp <= now) return null;
+  if (claims.nbf && claims.nbf > now + 60) return null;
+  if (!claims.sub) return null;
+
+  return {
+    provider: 'google',
+    id: claims.sub,
+    name: claims.name || claims.email?.split('@')[0] || 'Player',
+    picture: claims.picture || null,
+  };
+}
+
+async function verifyDiscordToken(token, env) {
   const res = await fetch('https://discord.com/api/v10/users/@me', {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!res.ok) return null;
 
   const user = await res.json();
-  const slim = {
+  return {
+    provider: 'discord',
     id: user.id,
     name: user.global_name || user.username,
     avatar: user.avatar,
     discriminator: user.discriminator,
   };
-  await env.RNGDLE.put(cacheKey, JSON.stringify(slim), { expirationTtl: 300 });
-  return slim;
 }
 
+/**
+ * Resolves a bearer token to a user for whichever provider sent it.
+ * Cached briefly, keyed by the token itself.
+ */
+async function identify(token, provider, env) {
+  const cacheKey = `token:${await sha256(token)}`;
+  const cached = await env.RNGDLE.get(cacheKey, 'json');
+  if (cached) return cached;
+
+  const user =
+    provider === 'google' ? await verifyGoogleToken(token, env) : await verifyDiscordToken(token, env);
+  if (!user) return null;
+
+  // Never cache past the token's own lifetime.
+  await env.RNGDLE.put(cacheKey, JSON.stringify(user), { expirationTtl: 300 });
+  return user;
+}
+
+/** Stable cross-provider identity; must match the client's playerKey(). */
+const playerKey = (user) => `${user.provider}:${user.id}`;
+
 function avatarUrl(user) {
+  if (user.provider === 'google') return user.picture || null;
   if (user.avatar) {
     const ext = user.avatar.startsWith('a_') ? 'gif' : 'png';
     return `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.${ext}?size=64`;
@@ -113,7 +215,7 @@ async function rateLimited(userId, env) {
  */
 function scoreDaily(user, day) {
   if (day !== dateKey()) throw new Error('daily submissions must be for the current UTC day');
-  const { digits, cosmic } = dailyRoll(day, user.id);
+  const { digits, cosmic } = dailyRoll(day, playerKey(user));
   const result = scoreRoll(digits, cosmic);
   return {
     score: result.total,
@@ -237,10 +339,12 @@ export default {
       const token = header.startsWith('Bearer ') ? header.slice(7) : null;
       if (!token) return json({ error: 'missing bearer token' }, 401, env);
 
-      const user = await identify(token, env);
-      if (!user) return json({ error: 'invalid Discord token' }, 401, env);
+      const provider = request.headers.get('X-Auth-Provider') === 'google' ? 'google' : 'discord';
+      const user = await identify(token, provider, env);
+      if (!user) return json({ error: `invalid ${provider} token` }, 401, env);
 
-      if (await rateLimited(user.id, env)) return json({ error: 'slow down' }, 429, env);
+      const identityKey = playerKey(user);
+      if (await rateLimited(identityKey, env)) return json({ error: 'slow down' }, 429, env);
 
       let payload;
       try {
@@ -261,7 +365,7 @@ export default {
 
       const key = isDaily ? dailyBoardKey(day) : BOARD_KEY;
       const board = await readBoard(env, key);
-      const existing = board.find((e) => e.playerId === user.id);
+      const existing = board.find((e) => e.playerId === identityKey);
 
       // The daily is one roll per player: first submission wins, and since we
       // recompute it, a resubmission is identical anyway.
@@ -270,7 +374,7 @@ export default {
       }
 
       const entry = {
-        playerId: user.id,
+        playerId: identityKey,
         name: user.name,
         avatar: avatarUrl(user),
         score: verified.score,
@@ -283,7 +387,7 @@ export default {
         at: Date.now(),
       };
 
-      const next = board.filter((e) => e.playerId !== user.id);
+      const next = board.filter((e) => e.playerId !== identityKey);
       next.push(entry);
       next.sort((a, b) => b.score - a.score);
       await writeBoard(env, key, next, isDaily ? DAILY_TTL : undefined);

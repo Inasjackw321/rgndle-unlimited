@@ -15,6 +15,14 @@ export const CONFIG = {
   discordClientId: '',
 
   /**
+   * Google OAuth client ID (Web application).
+   * https://console.cloud.google.com/apis/credentials
+   * Authorise this site's origin under "Authorised JavaScript origins".
+   * Leave empty to hide Google sign-in.
+   */
+  googleClientId: '',
+
+  /**
    * Shared leaderboard endpoint (see worker/ for a ready-made Cloudflare
    * Worker). Leave empty to keep the leaderboard on-device in localStorage.
    */
@@ -45,6 +53,7 @@ export function redirectUri() {
 }
 
 const CLIENT_ID_KEY = 'rngdle_client_id';
+const GOOGLE_ID_KEY = 'rngdle_google_client_id';
 const ENDPOINT_KEY = 'rngdle_endpoint';
 
 /**
@@ -52,13 +61,15 @@ const ENDPOINT_KEY = 'rngdle_endpoint';
  * enable sign-in on a deployment they can't edit — and let you test auth on
  * localhost without touching this file.
  */
-export function saveOverrides({ discordClientId, leaderboardEndpoint }) {
+export function saveOverrides({ discordClientId, googleClientId, leaderboardEndpoint }) {
+  const write = (key, value) => {
+    if (value) localStorage.setItem(key, value);
+    else localStorage.removeItem(key);
+  };
   try {
-    if (discordClientId) localStorage.setItem(CLIENT_ID_KEY, discordClientId);
-    else localStorage.removeItem(CLIENT_ID_KEY);
-
-    if (leaderboardEndpoint) localStorage.setItem(ENDPOINT_KEY, leaderboardEndpoint);
-    else localStorage.removeItem(ENDPOINT_KEY);
+    write(CLIENT_ID_KEY, discordClientId);
+    write(GOOGLE_ID_KEY, googleClientId);
+    write(ENDPOINT_KEY, leaderboardEndpoint);
     return true;
   } catch {
     return false;
@@ -74,16 +85,27 @@ export function overrides() {
   try {
     return {
       discordClientId: localStorage.getItem(CLIENT_ID_KEY) || '',
+      googleClientId: localStorage.getItem(GOOGLE_ID_KEY) || '',
       leaderboardEndpoint: localStorage.getItem(ENDPOINT_KEY) || '',
     };
   } catch {
-    return { discordClientId: '', leaderboardEndpoint: '' };
+    return { discordClientId: '', googleClientId: '', leaderboardEndpoint: '' };
   }
 }
 
 /** Discord snowflakes are 17-20 digit numbers. */
 export function isValidClientId(value) {
   return /^\d{17,20}$/.test(value.trim());
+}
+
+/** Google web client IDs look like 1234-abc.apps.googleusercontent.com */
+export function isValidGoogleClientId(value) {
+  return /^[\w-]+\.apps\.googleusercontent\.com$/.test(value.trim());
+}
+
+/** Origin Google needs listed under "Authorised JavaScript origins". */
+export function jsOrigin() {
+  return window.location.origin;
 }
 
 export function resolved() {

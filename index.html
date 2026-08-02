@@ -145,36 +145,57 @@
 
     <dialog id="setup-dialog" class="dialog">
       <article>
-        <h2>Set up Discord sign-in</h2>
+        <h2>Set up sign-in</h2>
         <p>
-          Sign-in needs a Discord application, which takes about a minute to create. Nothing secret is
-          involved — a client ID is public, which is why this game needs no server.
+          Sign-in needs an OAuth client ID. Every &ldquo;Sign in with&hellip;&rdquo; button on the web works this
+          way &mdash; the site owner registers an app with the provider first. Nothing secret is involved: a
+          client ID is public, which is why this game needs no server. Set up either provider, or both.
         </p>
 
-        <h3>1. Create the application</h3>
+        <h3>Google</h3>
         <p>
-          Open the
+          In
+          <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer"
+            >Google Cloud &rarr; Credentials</a
+          >, create an <strong>OAuth client ID</strong> of type <strong>Web application</strong>. Under
+          <strong>Authorised JavaScript origins</strong>, add this origin:
+        </p>
+        <div class="copy-field">
+          <code id="setup-origin"></code>
+          <button type="button" class="share-btn" id="copy-origin">Copy</button>
+        </div>
+        <p class="hint">
+          Google authorises an origin, not a full URL &mdash; there is no redirect path to get wrong. You do
+          not need to add a redirect URI.
+        </p>
+
+        <h3>Discord</h3>
+        <p>
+          In the
           <a href="https://discord.com/developers/applications" target="_blank" rel="noopener noreferrer"
             >Discord developer portal</a
-          >
-          and press <strong>New Application</strong>. Name it whatever you like.
-        </p>
-
-        <h3>2. Register this redirect URL</h3>
-        <p>
-          In your application, go to <strong>OAuth2 &rarr; Redirects</strong> and add this exact URL, then
-          press Save Changes:
+          >, press <strong>New Application</strong>, then under <strong>OAuth2 &rarr; Redirects</strong> add
+          this exact URL and press Save Changes:
         </p>
         <div class="copy-field">
           <code id="setup-redirect"></code>
           <button type="button" class="share-btn" id="copy-redirect">Copy</button>
         </div>
 
-        <h3>3. Paste your Client ID</h3>
-        <p>Still on the OAuth2 page, copy the <strong>Client ID</strong> and paste it here.</p>
+        <h3>Paste your client IDs</h3>
         <form id="setup-form">
           <label class="field">
-            <span>Client ID</span>
+            <span>Google client ID</span>
+            <input
+              id="setup-google-id"
+              type="text"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="123456-abc.apps.googleusercontent.com"
+            />
+          </label>
+          <label class="field">
+            <span>Discord client ID</span>
             <input
               id="setup-client-id"
               type="text"
@@ -199,13 +220,13 @@
           </label>
           <p class="field-error" id="setup-error" hidden></p>
           <div class="setup-actions">
-            <button type="submit" class="discord-btn">Save &amp; sign in</button>
+            <button type="submit" class="discord-btn">Save</button>
             <button type="button" class="share-btn" id="setup-clear">Clear</button>
           </div>
         </form>
 
         <p class="fine-print">
-          Saved in this browser only. To set it for everyone, put the same values in
+          Saved in this browser only. To turn sign-in on for everyone who visits, put the same values in
           <code>js/config.js</code> and redeploy.
         </p>
       </article>
@@ -251,7 +272,7 @@
         <h3>Setup</h3>
         <p id="help-setup"></p>
         <p class="setup-actions">
-          <button type="button" class="share-btn" id="open-setup">Configure Discord sign-in</button>
+          <button type="button" class="share-btn" id="open-setup">Configure sign-in</button>
         </p>
       </article>
       <button class="dialog-close" type="button">Close</button>

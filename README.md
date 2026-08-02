@@ -2,9 +2,9 @@
 
 Roll a nine-digit number. Fifteen factors judge it. Find out how rare your luck really was.
 
-A static, dependency-free web game: slot-machine reels, a rarity-weighted scoring engine, a verifiable
-Daily Challenge, 41 achievements, shareable cards, Discord sign-in and leaderboards — all running on
-GitHub Pages with no build step and no server.
+A static web game: slot-machine reels, a rarity-weighted scoring engine, a verifiable Daily Challenge,
+41 achievements, shareable cards, Google and Discord sign-in, and leaderboards — all running on GitHub
+Pages with no build step and no server.
 
 ---
 
@@ -136,64 +136,71 @@ rather than silently shipping miscalibrated ranks.
 
 There is no build step. `.nojekyll` is present so paths beginning with `_` are served correctly.
 
-## Discord sign-in
+## Signing in
 
-The game uses the OAuth2 **implicit grant** (`response_type=token`). That is what makes sign-in work
-on a static host: the access token comes back in the URL fragment, so there is no token exchange,
-**no client secret, and no server**. Only the `identify` scope is requested — username and avatar.
+Two providers, either or both. Both are browser-only flows, which is what makes them work on a static
+host — no token exchange, no client secret, no server.
 
-Sign-in happens in a **popup**, so the page (and the roll you're looking at) is never torn down by a
-full-page navigation. If the popup is blocked it falls back to a normal redirect. Both routes land on
-`callback.html`, which posts the result back to the opener or stashes it and returns you to the game —
-so there is only ever **one redirect URI to register**.
+| | Google | Discord |
+| --- | --- | --- |
+| Mechanism | Identity Services (signed JWT ID token) | OAuth2 implicit grant |
+| You register | an **authorised JavaScript origin** | an **exact redirect URL** |
+| Token life | ~1 hour, silently renewed | 7 days, renewable with `prompt=none` |
+| Server verification | RS256 signature against Google's public keys | token checked against the Discord API |
 
-### Setup
+Every "Sign in with…" button on the web requires the site owner to register an OAuth client first;
+there is no provider that skips this. Google's is the more forgiving of the two, because it authorises
+an origin rather than an exact path.
 
-The quickest route needs no code changes at all. Open the game and press **Set up Discord sign-in** in
-the top right — the dialog walks through it, prints the exact redirect URL for wherever the game is
-running with a copy button, and signs you in as soon as you save.
+### Quickest route
 
-Behind that dialog, the steps are:
+Open the game and press **Set up sign-in** in the top right. The dialog prints the exact origin and
+redirect URL for wherever the game is running, with copy buttons, and takes the client IDs.
 
-1. Create an application at <https://discord.com/developers/applications> (**New Application**).
-2. **OAuth2 → Redirects**, add the exact URL the game is served from, plus `callback.html`:
-   ```
-   https://<your-username>.github.io/<your-repo>/callback.html
-   ```
-   Locally that's `http://localhost:8080/callback.html`. Press **Save Changes**.
-3. Copy the **Client ID** from the same page and paste it into the dialog.
+### Google
 
-Settings entered in the dialog are stored in that browser only, which is ideal for trying it out. To
-enable sign-in for **everyone** who visits your deployment, put the same value in `js/config.js` and
-redeploy:
+1. In [Google Cloud → Credentials](https://console.cloud.google.com/apis/credentials), create an
+   **OAuth client ID** of type **Web application**.
+2. Under **Authorised JavaScript origins**, add your origin — e.g. `https://<you>.github.io`. There is
+   no redirect URI to add.
+3. Put the client ID (`…apps.googleusercontent.com`) into `js/config.js` as `googleClientId`.
 
-```js
-discordClientId: '1234567890123456789',
-```
+### Discord
 
-A client ID is public information — it ships to the browser either way. The thing you must never
-commit is the client *secret*, and the implicit flow never needs one.
+1. Create an application at <https://discord.com/developers/applications>.
+2. **OAuth2 → Redirects**, add exactly `https://<you>.github.io/<repo>/callback.html`, then Save Changes.
+3. Put the **Client ID** into `js/config.js` as `discordClientId`.
+
+Only the `identify` scope is requested — username and avatar.
+
+Sign-in happens in a **popup** for Discord, so the page and the roll you're looking at are never torn
+down by a navigation; if the popup is blocked it falls back to a redirect. Both routes land on
+`callback.html`, so there is only ever one redirect URI to register. Google renders its own button, as
+their branding terms require.
 
 ### Session handling
 
-- The token is stored in `localStorage` and scrubbed from the address bar immediately on return, and
-  the OAuth `state` parameter is generated and checked on the way back.
-- Implicit-grant tokens last seven days and **cannot be refreshed**, so the game manages the lifecycle
-  instead of dropping you silently: within 12 hours of expiry the chip shows a **Renew** button, and a
-  browser that has signed in before gets a **Reconnect** button rather than a cold sign-in prompt.
-- Both use `prompt=none`, which returns immediately for anyone who has already authorised the app — so
-  reconnecting is a single click with no consent screen. If Discord says interaction is required, it
-  retries with the real prompt automatically.
-- A `401` from the leaderboard mid-session triggers one silent re-auth and a retry before giving up.
-- Signing in **migrates your guest scores** to your Discord identity rather than appearing to wipe the
-  board.
+- Tokens are stored in `localStorage` and scrubbed from the address bar immediately on return; the
+  OAuth `state` parameter is generated and checked on the way back.
+- Google ID tokens expire in about an hour, so **identity and token lifetimes are tracked separately**.
+  Your profile stays signed in for 30 days locally — re-prompting hourly just to look at your own roll
+  history would be obnoxious — while the leaderboard silently renews the token before submitting a
+  score, since that's the only place a fresh token actually matters.
+- Discord tokens last seven days and cannot be refreshed, so within 12 hours of expiry the chip shows
+  a **Renew** button, and a browser that has signed in before gets **Reconnect** rather than a cold
+  prompt. Both use `prompt=none`, so returning users re-auth with no consent screen.
+- A `401` from the leaderboard triggers one silent re-auth and a retry.
 
-Leave `discordClientId` empty and the game runs fine in guest mode.
+Settings entered in the in-app dialog are per-browser, which suits trying it out. To enable sign-in for
+**everyone** who visits, put the same values in `js/config.js` and redeploy. A client ID is public — it
+ships to the browser either way. The thing you must never commit is a client *secret*, and neither
+flow here uses one.
 
 ## What signing in gets you
 
-Roll history, achievements and the Daily streak are stored **per identity**, namespaced by player ID
-(`rngdle_history::250058956905955328`). Signing in therefore swaps the whole profile rather than just
+Roll history, achievements and the Daily streak are stored **per identity**, namespaced by player key
+(`rngdle_history::google:1098765…`). Identity is `provider:id`, so a Google subject and a Discord
+snowflake can never collide. Signing in therefore swaps the whole profile rather than just
 changing the name on the leaderboard, and two people sharing a browser never see each other's
 progress.
 
@@ -215,6 +222,8 @@ For a **shared** leaderboard, deploy the Cloudflare Worker in `worker/`:
 ```bash
 cd worker
 npx wrangler kv namespace create RNGDLE   # paste the id into wrangler.toml
+# Required if you accept Google sign-ins, so tokens minted for other sites are rejected:
+#   set GOOGLE_CLIENT_ID in wrangler.toml
 npx wrangler deploy
 ```
 
@@ -224,7 +233,9 @@ Then set the endpoint in `js/config.js`:
 leaderboardEndpoint: 'https://rngdle-leaderboard.<your-subdomain>.workers.dev',
 ```
 
-The Worker verifies the Discord bearer token, rate-limits submissions, and keeps one personal-best row
+The Worker verifies the bearer token — Discord tokens against the Discord API, Google ID tokens by
+checking the RS256 signature against Google's published keys plus issuer, audience and expiry — then
+rate-limits submissions, and keeps one personal-best row
 per player on the all-time board plus one row per player per day on the Daily board (kept ~40 days).
 
 ### Channel announcements
@@ -269,7 +280,10 @@ js/share.js                 PNG share card and Discord text
 js/reels.js                 slot-machine reel mechanics
 js/fx.js                    starfield, particle bursts, count-up, screen shake
 js/audio.js                 synthesised sound (no audio files)
-js/discord.js               OAuth2 implicit grant, popup flow, session lifecycle
+js/auth.js                  provider-agnostic sign-in facade and session store
+js/discord.js               OAuth2 implicit grant, popup flow, redirect fallback
+js/google.js                Google Identity Services, JWT ID tokens
+js/profile.js               per-identity storage and guest adoption
 js/leaderboard.js           local and remote board adapters, both scopes
 js/ui.js                    rendering
 js/main.js                  game loop and wiring

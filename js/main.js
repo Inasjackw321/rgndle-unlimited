@@ -7,11 +7,12 @@ import { percentileOf, rankFor, RANKS, SAMPLE_SIZE } from './ranks.js';
 import { mountReels, spin, setDigits, highlight, clearHighlights } from './reels.js';
 import { startStarfield, initParticles, burst, countUp, shake, wait } from './fx.js';
 import * as audio from './audio.js';
-import * as auth from './discord.js';
+import * as auth from './auth.js';
 import * as board from './leaderboard.js';
 import * as daily from './daily.js';
 import * as achievements from './achievements.js';
 import * as share from './share.js';
+import * as google from './google.js';
 import * as profile from './profile.js';
 import {
   resolved,
@@ -20,6 +21,8 @@ import {
   saveOverrides,
   clearOverrides,
   isValidClientId,
+  isValidGoogleClientId,
+  jsOrigin,
 } from './config.js';
 import * as ui from './ui.js';
 
@@ -54,7 +57,7 @@ function random() {
  * ------------------------------------------------------------------ */
 
 function playerId() {
-  return auth.currentSession()?.user?.id || daily.guestId();
+  return auth.playerKey() || daily.guestId();
 }
 
 /* ------------------------------------------------------------------ *
@@ -362,18 +365,22 @@ function setupSetupDialog() {
   const dialog = ui.el('setup-dialog');
   const form = ui.el('setup-form');
   const clientIdInput = ui.el('setup-client-id');
+  const googleIdInput = ui.el('setup-google-id');
   const endpointInput = ui.el('setup-endpoint');
   const error = ui.el('setup-error');
 
   ui.el('setup-redirect').textContent = redirectUri();
+  ui.el('setup-origin').textContent = jsOrigin();
 
   const open = () => {
     const current = overrides();
-    clientIdInput.value = current.discordClientId || resolved().discordClientId || '';
-    endpointInput.value = current.leaderboardEndpoint || resolved().leaderboardEndpoint || '';
+    const active = resolved();
+    clientIdInput.value = current.discordClientId || active.discordClientId || '';
+    googleIdInput.value = current.googleClientId || active.googleClientId || '';
+    endpointInput.value = current.leaderboardEndpoint || active.leaderboardEndpoint || '';
     error.hidden = true;
     dialog.showModal();
-    clientIdInput.focus();
+    (googleIdInput.value || !clientIdInput.value ? googleIdInput : clientIdInput).focus();
   };
 
   ui.el('open-setup').addEventListener('click', () => {
@@ -386,11 +393,16 @@ function setupSetupDialog() {
     if (e.target === dialog) dialog.close();
   });
 
-  const copyBtn = ui.el('copy-redirect');
-  copyBtn.addEventListener('click', async () => {
-    const ok = await share.copyText(redirectUri());
-    ui.flashButton(copyBtn, ok ? 'Copied!' : 'Select it');
-  });
+  for (const [btnId, value] of [
+    ['copy-redirect', redirectUri],
+    ['copy-origin', jsOrigin],
+  ]) {
+    const btn = ui.el(btnId);
+    btn.addEventListener('click', async () => {
+      const ok = await share.copyText(value());
+      ui.flashButton(btn, ok ? 'Copied!' : 'Select it');
+    });
+  }
 
   ui.el('setup-clear').addEventListener('click', () => {
     clearOverrides();
@@ -399,6 +411,7 @@ function setupSetupDialog() {
     auth.logout();
     reloadProfile();
     clientIdInput.value = '';
+    googleIdInput.value = '';
     endpointInput.value = '';
     error.hidden = true;
     dialog.close();
@@ -407,37 +420,54 @@ function setupSetupDialog() {
     refreshBoard();
   });
 
+  const fail = (message, input) => {
+    error.textContent = message;
+    error.hidden = false;
+    input?.focus();
+  };
+
   form.addEventListener('submit', (e) => {
     e.preventDefault();
-    const clientId = clientIdInput.value.trim();
+    const discordId = clientIdInput.value.trim();
+    const googleId = googleIdInput.value.trim();
     const endpoint = endpointInput.value.trim();
 
-    if (!isValidClientId(clientId)) {
-      error.textContent =
-        'That does not look like a client ID. It is a number of 17 to 20 digits — copy it from the OAuth2 page, not the application name.';
-      error.hidden = false;
-      clientIdInput.focus();
-      return;
+    if (!discordId && !googleId) {
+      return fail('Enter at least one client ID — Google, Discord, or both.', googleIdInput);
+    }
+    if (discordId && !isValidClientId(discordId)) {
+      return fail(
+        'That does not look like a Discord client ID. It is a number of 17 to 20 digits — copy it from the OAuth2 page, not the application name.',
+        clientIdInput,
+      );
+    }
+    if (googleId && !isValidGoogleClientId(googleId)) {
+      return fail(
+        'That does not look like a Google client ID. It ends in .apps.googleusercontent.com — copy the Client ID, not the client secret.',
+        googleIdInput,
+      );
     }
     if (endpoint && !/^https?:\/\//.test(endpoint)) {
-      error.textContent = 'The leaderboard endpoint must start with https://';
-      error.hidden = false;
-      endpointInput.focus();
-      return;
+      return fail('The leaderboard endpoint must start with https://', endpointInput);
     }
 
-    if (!saveOverrides({ discordClientId: clientId, leaderboardEndpoint: endpoint })) {
-      error.textContent = 'This browser is blocking storage, so settings cannot be saved here.';
-      error.hidden = false;
-      return;
+    if (
+      !saveOverrides({
+        discordClientId: discordId,
+        googleClientId: googleId,
+        leaderboardEndpoint: endpoint,
+      })
+    ) {
+      return fail('This browser is blocking storage, so settings cannot be saved here.');
     }
 
     dialog.close();
     paintAuth(auth.currentSession());
     setupHelpText();
-    // Straight into the popup — the click that submitted the form is a user
-    // gesture, so it won't be blocked.
-    signIn({ silent: false });
+    // Straight into sign-in — the click that submitted the form is a user
+    // gesture, so a popup won't be blocked. Google renders its own button, so
+    // only Discord can be launched directly from here.
+    if (discordId) signIn({ provider: 'discord' });
   });
 
   return { open };
@@ -523,14 +553,22 @@ let openSetup = () => {};
 
 function paintAuth(session) {
   ui.renderAuth(session, {
-    configured: auth.isConfigured(),
+    providers: auth.availableProviders().map((p) => ({ id: p.id, label: p.label })),
     canReconnect: auth.hasSignedInBefore(),
     expiring: auth.needsRenewal(),
     onSetup: () => openSetup(),
-    onLogin: () => signIn({ silent: false }),
-    onReconnect: () => signIn({ silent: true }),
+    onLogin: (providerId) => signIn({ provider: providerId }),
+    onReconnect: () => signIn({ provider: auth.lastProvider(), silent: true }),
+    mountProvider: (providerId, host) => {
+      if (providerId !== 'google') return;
+      google.renderButton(host).catch((err) => {
+        host.textContent = err.message;
+        host.className = 'google-host is-failed';
+      });
+    },
     onLogout: () => {
       auth.logout();
+      welcomedPlayer = null;
       reloadProfile();
       paintMode();
       refreshBoard();
@@ -538,12 +576,25 @@ function paintAuth(session) {
   });
 }
 
-async function signIn({ silent }) {
-  try {
-    const session = await auth.login({ silent });
+/**
+ * Post-sign-in work, shared by every provider.
+ *
+ * Guarded on identity because it can be reached more than once for the same
+ * account: Google's rendered button fires its callback *and* resolves the
+ * promise `login()` is awaiting, and silent token renewal produces a fresh
+ * session for a player who is already signed in. Neither should re-run the
+ * welcome or re-migrate anything.
+ */
+let welcomedPlayer = null;
 
-    const movedScores = board.migrateGuestScores(session.user);
-    const movedStores = profile.adoptGuestData(daily.guestId(), session.user.id);
+async function afterSignIn(session) {
+  const key = auth.playerKey(session);
+  const isNewIdentity = key !== welcomedPlayer;
+  welcomedPlayer = key;
+
+  if (isNewIdentity) {
+    const movedScores = board.migrateGuestScores(session);
+    const movedStores = profile.adoptGuestData(daily.guestId(), key);
 
     ui.toast({
       icon: movedScores || movedStores.length ? '📦' : '👋',
@@ -554,14 +605,24 @@ async function signIn({ silent }) {
           ? 'Your guest progress moved across.'
           : 'Your progress is saved to this account.',
     });
+  }
 
-    ui.notice(null);
-    reloadProfile();
-    paintMode();
-    await refreshBoard();
+  ui.notice(null);
+  reloadProfile();
+  paintMode();
+  await refreshBoard();
+}
+
+async function signIn({ provider, silent = false }) {
+  if (!provider) return;
+  try {
+    const session = await auth.login(provider, { silent });
+    if (!session) return; // silent attempt declined; leave the UI as it was
+    await afterSignIn(session);
   } catch (err) {
     if (err.code === 'cancelled') return;
-    ui.notice(`Discord sign-in failed: ${err.message}`);
+    const name = auth.PROVIDERS[provider]?.label || provider;
+    ui.notice(`${name} sign-in failed: ${err.message}`);
   }
 }
 
@@ -585,14 +646,25 @@ async function init() {
 
   ui.el('roll-btn').addEventListener('click', roll);
 
+  // Google delivers credentials through its own callback, so adopt whatever
+  // its rendered button produces rather than waiting on a promise.
+  google.onSession((session) => {
+    auth.adoptSession(session);
+    afterSignIn(session);
+  });
+
   auth.onAuthChange(paintAuth);
 
   const authError = await auth.initAuth();
   if (authError) ui.notice(authError);
 
   // Auth resolves asynchronously, so the first paint above used the guest
-  // profile. Repaint now that we know who is actually signed in.
-  if (auth.currentSession()) reloadProfile();
+  // profile. Repaint now that we know who is actually signed in — and treat a
+  // restored session as already welcomed, so reloading isn't a fresh sign-in.
+  if (auth.currentSession()) {
+    welcomedPlayer = auth.playerKey();
+    reloadProfile();
+  }
 
   paintMode();
   await refreshBoard();

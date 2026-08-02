@@ -9,35 +9,27 @@
  * Sign-in prefers a **popup**, so the game (and your roll history on screen)
  * is never torn down by a full-page navigation. If the popup is blocked we
  * fall back to a normal redirect. Both routes land on callback.html.
+ *
+ * This module is a *provider*: it produces normalised sessions and knows
+ * nothing about storage or listeners. auth.js owns those.
  */
 
-import { resolved, redirectUri, baseUri } from './config.js';
+import { resolved, redirectUri } from './config.js';
 
 const API = 'https://discord.com/api/v10';
-const TOKEN_KEY = 'rngdle_token';
 const STATE_KEY = 'rngdle_oauth_state';
 const PENDING_KEY = 'rngdle_pending_auth';
-const SEEN_KEY = 'rngdle_has_signed_in';
 
-/** Re-auth once the token has less than this long to live. */
-const RENEW_BEFORE_MS = 12 * 60 * 60 * 1000;
+export const id = 'discord';
+export const label = 'Discord';
 
-const listeners = new Set();
-let session = null; // { token, expiresAt, user }
-
-export function onAuthChange(fn) {
-  listeners.add(fn);
-  fn(session);
-  return () => listeners.delete(fn);
+class AuthError extends Error {
+  constructor(message, code) {
+    super(message);
+    this.code = code;
+  }
 }
-
-function emit() {
-  for (const fn of listeners) fn(session);
-}
-
-/* ------------------------------------------------------------------ *
- * Storage helpers
- * ------------------------------------------------------------------ */
+export { AuthError };
 
 const safeGet = (store, key) => {
   try {
@@ -46,15 +38,13 @@ const safeGet = (store, key) => {
     return null;
   }
 };
-
 const safeSet = (store, key, value) => {
   try {
     store.setItem(key, value);
   } catch {
-    /* private mode — session works until reload */
+    /* private mode */
   }
 };
-
 const safeRemove = (store, key) => {
   try {
     store.removeItem(key);
@@ -63,50 +53,13 @@ const safeRemove = (store, key) => {
   }
 };
 
-function readStoredToken() {
-  const raw = safeGet(localStorage, TOKEN_KEY);
-  if (!raw) return null;
-  try {
-    const data = JSON.parse(raw);
-    if (!data.token || !data.expiresAt || Date.now() >= data.expiresAt) {
-      safeRemove(localStorage, TOKEN_KEY);
-      return null;
-    }
-    return data;
-  } catch {
-    return null;
-  }
-}
-
-function storeToken(token, expiresIn) {
-  const data = { token, expiresAt: Date.now() + expiresIn * 1000 };
-  safeSet(localStorage, TOKEN_KEY, JSON.stringify(data));
-  safeSet(localStorage, SEEN_KEY, '1');
-  return data;
-}
-
-/** True if this browser has ever completed a sign-in. Drives "Reconnect" UI. */
-export function hasSignedInBefore() {
-  return safeGet(localStorage, SEEN_KEY) === '1';
-}
-
-/** Milliseconds until the current token expires, or null when signed out. */
-export function timeUntilExpiry() {
-  return session ? session.expiresAt - Date.now() : null;
-}
-
-export function needsRenewal() {
-  const left = timeUntilExpiry();
-  return left !== null && left < RENEW_BEFORE_MS;
+export function isConfigured() {
+  return Boolean(resolved().discordClientId);
 }
 
 /* ------------------------------------------------------------------ *
  * Authorize URL
  * ------------------------------------------------------------------ */
-
-export function isConfigured() {
-  return Boolean(resolved().discordClientId);
-}
 
 function authorizeUrl(state, { silent }) {
   const params = new URLSearchParams({
@@ -138,17 +91,9 @@ function checkState(returned) {
 }
 
 /* ------------------------------------------------------------------ *
- * Popup flow
+ * Popup
  * ------------------------------------------------------------------ */
 
-class AuthError extends Error {
-  constructor(message, code) {
-    super(message);
-    this.code = code;
-  }
-}
-
-/** Opens the popup and resolves with the OAuth fragment payload. */
 function popupAuth(state, { silent }) {
   const width = 520;
   const height = 720;
@@ -187,7 +132,6 @@ function popupAuth(state, { silent }) {
 
     window.addEventListener('message', onMessage);
 
-    // The user can always just close the window.
     const closedPoll = setInterval(() => {
       if (popup.closed) finish(reject, new AuthError('Sign-in cancelled', 'cancelled'));
     }, 400);
@@ -199,61 +143,6 @@ function popupAuth(state, { silent }) {
   });
 }
 
-/** Full-page redirect, used when popups are unavailable. Never returns. */
-function redirectAuth(state) {
-  window.location.href = authorizeUrl(state, { silent: false });
-}
-
-async function adopt(payload) {
-  if (payload.error) {
-    throw new AuthError(payload.errorDescription || payload.error, payload.error);
-  }
-  if (!payload.token) throw new AuthError('No access token returned', 'no-token');
-  if (!checkState(payload.state)) {
-    throw new AuthError('Sign-in state mismatch — please try again.', 'state-mismatch');
-  }
-
-  const stored = storeToken(payload.token, payload.expiresIn);
-  const user = await fetchUser(stored.token);
-  session = { ...stored, user };
-  emit();
-  return session;
-}
-
-/**
- * Signs in. Resolves with the session.
- *
- * @param {object} [opts]
- * @param {boolean} [opts.silent]   try prompt=none first (no consent screen)
- * @param {boolean} [opts.allowRedirect]  fall back to a full-page redirect
- */
-export async function login({ silent = false, allowRedirect = true } = {}) {
-  if (!isConfigured()) throw new AuthError('Discord client ID is not configured', 'not-configured');
-
-  const state = newState();
-
-  try {
-    return await adopt(await popupAuth(state, { silent }));
-  } catch (err) {
-    // A silent attempt that needs user interaction is expected, not a failure —
-    // retry with the real consent screen.
-    if (silent && err.code !== 'cancelled') {
-      return login({ silent: false, allowRedirect });
-    }
-    if (err.code === 'popup-blocked' && allowRedirect) {
-      redirectAuth(state);
-      return new Promise(() => {}); // navigation in flight
-    }
-    throw err;
-  }
-}
-
-export function logout() {
-  safeRemove(localStorage, TOKEN_KEY);
-  session = null;
-  emit();
-}
-
 /* ------------------------------------------------------------------ *
  * Discord API
  * ------------------------------------------------------------------ */
@@ -262,13 +151,12 @@ async function fetchUser(token) {
   const res = await fetch(`${API}/users/@me`, {
     headers: { Authorization: `Bearer ${token}` },
   });
-  if (res.status === 401) throw Object.assign(new Error('Token expired'), { unauthorized: true });
-  if (!res.ok) throw new Error(`Discord API returned ${res.status}`);
+  if (res.status === 401) throw new AuthError('Token expired', 'unauthorized');
+  if (!res.ok) throw new AuthError(`Discord API returned ${res.status}`, 'api');
   return res.json();
 }
 
-export function avatarUrl(user, size = 64) {
-  if (!user) return null;
+function avatarUrl(user, size = 64) {
   if (user.avatar) {
     const ext = user.avatar.startsWith('a_') ? 'gif' : 'png';
     return `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.${ext}?size=${size}`;
@@ -281,75 +169,78 @@ export function avatarUrl(user, size = 64) {
   return `https://cdn.discordapp.com/embed/avatars/${index}.png`;
 }
 
-export function displayName(user) {
-  return user?.global_name || user?.username || 'Unknown';
+function sessionFrom(token, expiresIn, user) {
+  const expiresAt = Date.now() + expiresIn * 1000;
+  return {
+    provider: 'discord',
+    token,
+    tokenExpiresAt: expiresAt,
+    expiresAt,
+    user: {
+      id: user.id,
+      name: user.global_name || user.username || 'Player',
+      avatar: avatarUrl(user, 64),
+      accent:
+        typeof user.accent_color === 'number'
+          ? `#${user.accent_color.toString(16).padStart(6, '0')}`
+          : null,
+    },
+  };
 }
 
-/** Discord profile accent, used to tint the signed-in chip. */
-export function accentColor(user) {
-  if (typeof user?.accent_color === 'number') {
-    return `#${user.accent_color.toString(16).padStart(6, '0')}`;
+async function adopt(payload) {
+  if (payload.error) {
+    throw new AuthError(payload.errorDescription || payload.error, payload.error);
   }
-  return null;
+  if (!payload.token) throw new AuthError('No access token returned', 'no-token');
+  if (!checkState(payload.state)) {
+    throw new AuthError('Sign-in state mismatch — please try again.', 'state-mismatch');
+  }
+  const user = await fetchUser(payload.token);
+  return sessionFrom(payload.token, payload.expiresIn, user);
 }
 
 /* ------------------------------------------------------------------ *
- * Startup
+ * Provider interface
  * ------------------------------------------------------------------ */
 
-/**
- * Call once on page load. Picks up a redirect-flow result if there is one,
- * otherwise restores a stored token. Returns an error string, or null.
- */
-export async function initAuth() {
-  const pendingRaw = safeGet(sessionStorage, PENDING_KEY);
-  if (pendingRaw) {
-    safeRemove(sessionStorage, PENDING_KEY);
-    try {
-      await adopt(JSON.parse(pendingRaw));
-      return null;
-    } catch (err) {
-      return err.code === 'access_denied' ? null : err.message;
-    }
-  }
+export async function login({ silent = false, allowRedirect = true } = {}) {
+  if (!isConfigured()) throw new AuthError('Discord client ID is not configured', 'not-configured');
 
-  const stored = readStoredToken();
-  if (!stored) return null;
-
+  const state = newState();
   try {
-    const user = await fetchUser(stored.token);
-    session = { ...stored, user };
-    emit();
-    return null;
+    return await adopt(await popupAuth(state, { silent }));
   } catch (err) {
-    if (err.unauthorized) {
-      logout();
-      return null;
+    // A silent attempt that needs user interaction is expected, not a failure.
+    if (silent && err.code !== 'cancelled') {
+      return login({ silent: false, allowRedirect });
     }
-    return 'Could not reach Discord. Playing as guest.';
+    if (err.code === 'popup-blocked' && allowRedirect) {
+      window.location.href = authorizeUrl(state, { silent: false });
+      return new Promise(() => {}); // navigation in flight
+    }
+    throw err;
   }
 }
 
-/**
- * Re-runs a request after a silent re-auth if the token has expired mid-session.
- * Returns true if the caller should retry.
- */
-export async function recoverFromUnauthorized() {
-  logout();
-  if (!isConfigured() || !hasSignedInBefore()) return false;
-  try {
-    await login({ silent: true, allowRedirect: false });
-    return true;
-  } catch {
-    return false;
-  }
+/** Picks up a result left behind by the redirect fallback, if there is one. */
+export async function consumePendingRedirect() {
+  const raw = safeGet(sessionStorage, PENDING_KEY);
+  if (!raw) return null;
+  safeRemove(sessionStorage, PENDING_KEY);
+  return adopt(JSON.parse(raw));
 }
 
-export function currentSession() {
-  return session;
+/** Re-validates a stored token on page load. */
+export async function restore(stored) {
+  const user = await fetchUser(stored.token);
+  return sessionFrom(stored.token, Math.max(0, (stored.expiresAt - Date.now()) / 1000), user);
 }
 
-export { AuthError };
+export function logout() {
+  /* Discord has no client-side sign-out beyond dropping the token. */
+}
 
-/** Kept so callers can surface the exact string to register with Discord. */
-export { redirectUri, baseUri };
+export function tokenIsFresh(session) {
+  return Boolean(session?.tokenExpiresAt && Date.now() < session.tokenExpiresAt);
+}
