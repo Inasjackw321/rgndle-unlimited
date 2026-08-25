@@ -309,7 +309,7 @@ body {
   opacity: 0.42;
 }
 
-.reels {
+.lanes {
   display: flex;
   gap: clamp(4px, 1vw, 9px);
   padding: 14px clamp(8px, 2vw, 18px);
@@ -318,6 +318,339 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.08);
   box-shadow: inset 0 6px 26px rgba(0, 0, 0, 0.85);
   max-width: 100%;
+}
+
+/* One column per digit: what you're aiming at, what you rolled, how far off. */
+.lane {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  transition: opacity 0.3s;
+}
+
+.lane-target {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: calc(var(--reel-h) * 0.42);
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  font-size: calc(var(--reel-h) * 0.34);
+  font-weight: 750;
+  line-height: 1;
+  color: var(--gold);
+  opacity: 0.75;
+  font-variant-numeric: tabular-nums;
+  transition: opacity 0.25s, transform 0.25s, text-shadow 0.25s;
+}
+
+/* Lanes not yet reached are dimmed, so the eye lands on the live one. */
+.lane.is-waiting {
+  opacity: 0.4;
+}
+
+.lane.is-active .lane-target,
+.lane.is-pending .lane-target {
+  opacity: 1;
+  transform: scale(1.14);
+  text-shadow: 0 0 18px rgba(255, 200, 87, 0.7);
+}
+
+.lane.is-active .reel {
+  box-shadow:
+    inset 0 0 0 2px var(--accent),
+    0 0 24px -6px var(--accent);
+}
+
+.reel-cover {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  z-index: 1;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #16162c, #0c0c18 55%, #141428);
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: calc(var(--reel-h) * 0.42);
+  font-weight: 700;
+  color: rgba(255, 255, 255, 0.16);
+  transition: opacity 0.2s;
+}
+
+.lane.is-rolling .reel-cover,
+.lane.is-pending .reel-cover,
+.lane.is-settled .reel-cover {
+  opacity: 0;
+}
+
+/* Row labels, sharing the lane layout so they line up with the rows. */
+.lane-labels {
+  justify-content: flex-start;
+  margin-right: 6px;
+}
+
+.lane-target-label,
+.reel-label,
+.lane-delta-label {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  font-weight: 750;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.lane-target-label {
+  height: calc(var(--reel-h) * 0.42);
+  color: var(--gold);
+  opacity: 0.8;
+}
+
+.reel-label {
+  height: var(--reel-h);
+  color: var(--accent);
+  opacity: 0.8;
+}
+
+.lane-delta-label {
+  height: 20px;
+}
+
+@media (max-width: 700px) {
+  .lane-labels {
+    display: none;
+  }
+}
+
+.lane-delta {
+  min-height: 20px;
+  font-size: 12.5px;
+  font-weight: 750;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  color: var(--muted);
+  line-height: 20px;
+  padding: 0 7px;
+  border-radius: 6px;
+  transition: background 0.25s, color 0.25s;
+}
+
+/* Distance colouring, best to worst. */
+.lane-delta[data-d='0'] {
+  color: #06140c;
+  background: #4ade80;
+  box-shadow: 0 0 16px -2px #4ade80;
+}
+.lane-delta[data-d='1'] {
+  color: #a7f3d0;
+  background: rgba(74, 222, 128, 0.18);
+}
+.lane-delta[data-d='2'] {
+  color: #fde68a;
+  background: rgba(255, 200, 87, 0.16);
+}
+.lane-delta[data-d='3'] {
+  color: #fdba74;
+  background: rgba(251, 146, 60, 0.16);
+}
+.lane-delta[data-d='4'] {
+  color: #fca5a5;
+  background: rgba(248, 113, 113, 0.16);
+}
+.lane-delta[data-d='5'] {
+  color: #fda4af;
+  background: rgba(255, 93, 143, 0.2);
+}
+
+.lane.is-bullseye {
+  animation: bullseye-pop 0.65s cubic-bezier(0.2, 1.5, 0.35, 1);
+}
+
+@keyframes bullseye-pop {
+  0% {
+    transform: scale(1);
+  }
+  40% {
+    transform: scale(1.13);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* ---------------- Re-roll budget ---------------- */
+
+.rerolls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 18px;
+  border-radius: 999px;
+  border: 1px solid var(--panel-line);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.rerolls-label {
+  font-size: 10.5px;
+  letter-spacing: 0.22em;
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.rerolls-pips {
+  display: flex;
+  gap: 7px;
+}
+
+.pip {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  border: 2px solid var(--accent);
+  background: var(--accent);
+  box-shadow: 0 0 12px -2px var(--accent);
+  transition: background 0.3s, box-shadow 0.3s, transform 0.3s, border-color 0.3s;
+}
+
+.pip.is-spent {
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.22);
+  box-shadow: none;
+  transform: scale(0.82);
+}
+
+.pip.is-spending {
+  animation: pip-burn 0.5s ease;
+}
+
+@keyframes pip-burn {
+  0% {
+    transform: scale(1.5);
+    background: var(--hot);
+    border-color: var(--hot);
+    box-shadow: 0 0 20px var(--hot);
+  }
+}
+
+/* ---------------- Roll / decide controls ---------------- */
+
+.controls {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  min-height: 74px;
+  width: 100%;
+}
+
+.decision {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: center;
+  animation: decision-in 0.32s cubic-bezier(0.2, 1.2, 0.4, 1) both;
+}
+
+@keyframes decision-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.96);
+  }
+}
+
+.decision-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 22px;
+  border-radius: 14px;
+  border: 1px solid var(--panel-line);
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+  transition: transform 0.14s, background 0.2s, border-color 0.2s, box-shadow 0.2s;
+}
+
+.decision-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+}
+
+.decision-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.decision-title {
+  display: block;
+  font-weight: 750;
+  font-size: 15px;
+  letter-spacing: 0.02em;
+}
+
+.decision-sub {
+  display: block;
+  font-size: 11.5px;
+  color: var(--muted);
+  font-weight: 550;
+}
+
+.decision-icon {
+  font-size: 19px;
+  line-height: 1;
+}
+
+.decision-btn.is-keep {
+  border-color: rgba(110, 231, 255, 0.5);
+  background: linear-gradient(180deg, rgba(110, 231, 255, 0.18), rgba(110, 231, 255, 0.06));
+}
+
+.decision-btn.is-keep:hover {
+  box-shadow: 0 10px 26px -12px var(--accent);
+}
+
+.decision-btn.is-reroll {
+  border-color: rgba(255, 200, 87, 0.45);
+  background: linear-gradient(180deg, rgba(255, 200, 87, 0.15), rgba(255, 200, 87, 0.05));
+}
+
+.decision-btn.is-reroll:hover:not(:disabled) {
+  box-shadow: 0 10px 26px -12px var(--gold);
+}
+
+/* ---------------- Status line ---------------- */
+
+.status {
+  font-size: 13.5px;
+  color: var(--muted);
+  text-align: center;
+  min-height: 20px;
+}
+
+.status b {
+  color: var(--text);
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.tagline {
+  margin: 0;
+  max-width: 60ch;
+  text-align: center;
+  font-size: 14px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.how-to {
+  margin: 0;
+  padding-left: 20px;
+  font-size: 14px;
+  color: #c9ccdd;
+}
+
+.how-to li {
+  margin-bottom: 7px;
 }
 
 .reel {
@@ -331,8 +664,10 @@ body {
     inset 0 0 0 1px rgba(255, 255, 255, 0.07),
     inset 0 14px 18px -14px rgba(0, 0, 0, 0.95),
     inset 0 -14px 18px -14px rgba(0, 0, 0, 0.95);
-  flex: 0 1 var(--reel-w);
-  min-width: 0;
+  /* Lanes are flex *columns*, so a flex-basis here would set the reel's
+     height. It must stay exactly --reel-h or the digit strip, which steps by
+     that amount, stops lining up with the window. */
+  flex: 0 0 auto;
 }
 
 /* Glass sheen across the reel window */
@@ -1154,11 +1489,12 @@ body {
   }
 }
 
-/* ---------------- Mode switch ---------------- */
+/* ---------------- Scope switch ---------------- */
 
-.mode-switch,
 .scope-switch {
-  display: inline-flex;
+  display: flex;
+  width: 100%;
+  margin-bottom: 8px;
   padding: 4px;
   gap: 4px;
   border-radius: 12px;
@@ -1166,77 +1502,27 @@ body {
   background: rgba(255, 255, 255, 0.035);
 }
 
-.mode,
 .scope {
-  position: relative;
+  flex: 1;
   border: 0;
   background: none;
   color: var(--muted);
   font-weight: 650;
-  font-size: 13px;
-  padding: 7px 18px;
+  font-size: 12.5px;
+  padding: 6px 10px;
   border-radius: 9px;
   cursor: pointer;
   transition: color 0.2s, background 0.2s;
 }
 
-.mode:hover,
 .scope:hover {
   color: var(--text);
 }
 
-.mode.is-active,
 .scope.is-active {
   color: #06121a;
   background: linear-gradient(180deg, var(--accent), #2bb8dd);
   box-shadow: 0 4px 14px -6px var(--accent);
-}
-
-.scope-switch {
-  display: flex;
-  width: 100%;
-  margin-bottom: 8px;
-}
-
-.scope {
-  flex: 1;
-  padding: 6px 10px;
-  font-size: 12.5px;
-}
-
-/* Unplayed-daily indicator */
-.mode-dot {
-  display: inline-block;
-  width: 7px;
-  height: 7px;
-  margin-left: 6px;
-  border-radius: 50%;
-  background: var(--gold);
-  vertical-align: middle;
-  animation: dot-pulse 1.8s ease-in-out infinite;
-}
-
-@keyframes dot-pulse {
-  0%,
-  100% {
-    box-shadow: 0 0 0 0 rgba(255, 200, 87, 0.65);
-  }
-  50% {
-    box-shadow: 0 0 0 6px rgba(255, 200, 87, 0);
-  }
-}
-
-.daily-status {
-  font-size: 13px;
-  color: var(--muted);
-  text-align: center;
-  margin-top: -8px;
-}
-
-.daily-status b {
-  color: var(--text);
-  font-family: ui-monospace, Menlo, Consolas, monospace;
-  font-variant-numeric: tabular-nums;
 }
 
 /* ---------------- Share ---------------- */

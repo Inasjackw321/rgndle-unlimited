@@ -1,4 +1,4 @@
-name = "rngdle-leaderboard"
+name = "gussle-leaderboard"
 main = "src/index.js"
 compatibility_date = "2024-11-01"
 
@@ -16,10 +16,10 @@ ANNOUNCE_MIN_RANK = "SS"
 # Must stay in step with googleClientId in js/config.js.
 GOOGLE_CLIENT_ID = "415975643615-u5mp1cnrltc6bg231hlmklpi4d9m73ud.apps.googleusercontent.com"
 
-# Create with:  npx wrangler kv namespace create RNGDLE
+# Create with:  npx wrangler kv namespace create GUSSLE
 # then paste the returned id below.
 [[kv_namespaces]]
-binding = "RNGDLE"
+binding = "GUSSLE"
 id = "replace-me"
 
 # Channel announcements are opt-in and the URL is a secret, never a var, so it

@@ -2,19 +2,22 @@
  * Per-identity storage.
  *
  * Signing in should give you *your* account, not just a different name on the
- * leaderboard. Roll history, achievements and the Daily streak are therefore
- * namespaced by player ID, so two people sharing a browser — or one person with
- * a guest session and a Discord session — never see each other's progress.
+ * leaderboard. Results, achievements, streaks and today's in-progress game are
+ * therefore namespaced by player key, so two people sharing a browser — or one
+ * person with a guest session and a signed-in one — never see each other's
+ * progress or each other's half-finished day.
  *
- * Storage keys look like `rngdle_history::250058956905955328`.
+ * Storage keys look like `gussle_history::google:1098765…`.
  */
 
-const LEGACY_MIGRATED = 'rngdle_legacy_migrated';
+const LEGACY_MIGRATED = 'gussle_legacy_migrated';
 
 export const STORES = {
-  history: 'rngdle_history',
-  achievements: 'rngdle_achievements',
-  dailyStreak: 'rngdle_daily_streak',
+  history: 'gussle_history',
+  achievements: 'gussle_achievements',
+  dailyStreak: 'gussle_streak',
+  /** Today's in-progress or finished game, so a reload can't rewind it. */
+  dayState: 'gussle_day',
 };
 
 const scopedKey = (base, playerId) => `${base}::${playerId}`;

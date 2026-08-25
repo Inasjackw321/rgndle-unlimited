@@ -3,17 +3,17 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>RNGDLE Unlimited</title>
+    <title>Gussle</title>
     <meta
       name="description"
-      content="Roll a nine-digit number. Fifteen factors judge it. Find out how rare your luck really was."
+      content="One nine-digit target a day. Roll each digit and try to land close. Three re-rolls — spend them wisely."
     />
     <meta name="color-scheme" content="dark" />
     <meta name="theme-color" content="#0a0a12" />
     <link rel="stylesheet" href="styles.css" />
     <link
       rel="icon"
-      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎲</text></svg>"
+      href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎯</text></svg>"
     />
   </head>
   <body>
@@ -22,15 +22,15 @@
 
     <header class="topbar">
       <div class="brand">
-        <span class="brand-mark" aria-hidden="true">🎲</span>
-        <h1>RNGDLE<span>UNLIMITED</span></h1>
+        <span class="brand-mark" aria-hidden="true">🎯</span>
+        <h1>GUSSLE<span id="puzzle-no"></span></h1>
       </div>
 
       <div class="topbar-actions">
         <button id="sound-toggle" class="icon-btn" type="button" aria-pressed="true" title="Toggle sound">
           <span data-sound-on>🔊</span><span data-sound-off hidden>🔇</span>
         </button>
-        <button id="help-btn" class="icon-btn" type="button" title="How scoring works">?</button>
+        <button id="help-btn" class="icon-btn" type="button" title="How to play">?</button>
         <div id="auth-slot" class="auth-slot">
           <!-- Filled in by ui.renderAuth: Google's rendered button, the signed-in
                chip, or the setup prompt when no client ID is configured. -->
@@ -41,41 +41,49 @@
     <div id="notice" class="notice" hidden></div>
 
     <main class="layout">
-      <section class="stage" aria-label="Roll">
+      <section class="stage" aria-label="Today's game">
+        <!-- The one-line rulebook. Stays put so it's always answerable. -->
+        <p class="tagline" id="tagline">
+          Roll each digit and land as close to the target as you can. Digits wrap, so 9 and 0 are neighbours.
+        </p>
+
         <div class="machine">
           <div class="machine-glow" aria-hidden="true"></div>
 
-          <div
-            id="reels"
-            class="reels"
-            role="img"
-            aria-live="polite"
-            aria-label="Roll result: not yet rolled"
-          ></div>
+          <div id="lanes" class="lanes" role="img" aria-live="polite" aria-label="Your digits so far"></div>
 
-          <div class="cosmic" id="cosmic">
-            <span class="cosmic-label">COSMIC</span>
-            <span class="cosmic-value" id="cosmic-value">—</span>
-            <span class="cosmic-name" id="cosmic-name">awaiting roll</span>
+          <div class="rerolls" id="rerolls">
+            <span class="rerolls-label">RE-ROLLS</span>
+            <span class="rerolls-pips" id="reroll-pips" aria-live="polite"></span>
           </div>
         </div>
 
-        <div class="mode-switch" role="tablist" aria-label="Game mode">
-          <button class="mode is-active" type="button" role="tab" aria-selected="true" data-mode="endless">
-            Endless
+        <!-- Exactly one of these two rows is visible at a time. -->
+        <div class="controls">
+          <button id="roll-btn" class="roll-btn" type="button">
+            <span class="roll-btn-label">ROLL DIGIT 1</span>
+            <span class="roll-btn-sub">press space</span>
           </button>
-          <button class="mode" type="button" role="tab" aria-selected="false" data-mode="daily">
-            Daily
-            <span class="mode-dot" id="daily-dot" hidden aria-label="not played yet"></span>
-          </button>
+
+          <div class="decision" id="decision" hidden>
+            <button id="reroll-btn" class="decision-btn is-reroll" type="button">
+              <span class="decision-icon" aria-hidden="true">↻</span>
+              <span class="decision-text">
+                <span class="decision-title">Re-roll</span>
+                <span class="decision-sub" id="reroll-sub">3 left</span>
+              </span>
+            </button>
+            <button id="keep-btn" class="decision-btn is-keep" type="button">
+              <span class="decision-text">
+                <span class="decision-title" id="keep-title">Keep</span>
+                <span class="decision-sub" id="keep-sub">distance 2</span>
+              </span>
+              <span class="decision-icon" aria-hidden="true">→</span>
+            </button>
+          </div>
         </div>
 
-        <button id="roll-btn" class="roll-btn" type="button">
-          <span class="roll-btn-label">ROLL</span>
-          <span class="roll-btn-sub">press space</span>
-        </button>
-
-        <div class="daily-status" id="daily-status" hidden></div>
+        <div class="status" id="status"></div>
 
         <div class="verdict" id="verdict" data-state="empty">
           <div class="verdict-rank" id="verdict-rank" aria-hidden="true"></div>
@@ -85,7 +93,7 @@
             <div class="verdict-meta" id="verdict-meta"></div>
             <div class="share-row" id="share-row" hidden>
               <button type="button" class="share-btn" id="share-card">Copy image</button>
-              <button type="button" class="share-btn" id="share-text">Copy for Discord</button>
+              <button type="button" class="share-btn" id="share-text">Copy result</button>
             </div>
           </div>
         </div>
@@ -95,9 +103,7 @@
 
       <aside class="sidebar">
         <div class="tabs" role="tablist">
-          <button class="tab is-active" role="tab" data-panel="leaderboard" aria-selected="true">
-            Leaderboard
-          </button>
+          <button class="tab is-active" role="tab" data-panel="leaderboard" aria-selected="true">Today</button>
           <button class="tab" role="tab" data-panel="history" aria-selected="false">History</button>
           <button class="tab" role="tab" data-panel="stats" aria-selected="false">Stats</button>
           <button class="tab" role="tab" data-panel="awards" aria-selected="false">Awards</button>
@@ -105,11 +111,11 @@
 
         <div class="panel is-active" data-panel="leaderboard">
           <div class="scope-switch" role="tablist" aria-label="Leaderboard scope">
-            <button class="scope is-active" type="button" role="tab" aria-selected="true" data-scope="all">
-              All-time
-            </button>
-            <button class="scope" type="button" role="tab" aria-selected="false" data-scope="daily">
+            <button class="scope is-active" type="button" role="tab" aria-selected="true" data-scope="daily">
               Today
+            </button>
+            <button class="scope" type="button" role="tab" aria-selected="false" data-scope="all">
+              All-time best
             </button>
           </div>
           <div class="panel-note" id="board-note"></div>
@@ -187,7 +193,7 @@
               inputmode="url"
               autocomplete="off"
               spellcheck="false"
-              placeholder="https://rngdle-leaderboard.you.workers.dev"
+              placeholder="https://gussle-leaderboard.you.workers.dev"
             />
           </label>
           <p class="field-error" id="setup-error" hidden></p>
@@ -207,41 +213,37 @@
 
     <dialog id="help-dialog" class="dialog">
       <article>
-        <h2>How the score works</h2>
+        <h2>How to play</h2>
+        <ol class="how-to">
+          <li>Everyone gets the <strong>same nine-digit target</strong> today.</li>
+          <li>Roll the digits <strong>one at a time</strong>, left to right.</li>
+          <li>
+            After each roll, <strong>keep it</strong> or spend one of your <strong>three re-rolls</strong> on
+            that digit. Re-rolls do not come back until tomorrow.
+          </li>
+          <li>The closer each digit lands to the target, the more it scores.</li>
+        </ol>
+
+        <h3>Digits wrap</h3>
         <p>
-          Every roll produces nine digits and one <strong>cosmic multiplier</strong>. The digits are then
-          examined by a panel of factors, each of which pays out according to how unlikely it is.
+          Distance is measured the short way round, so <strong>9 and 0 are one apart</strong>, and the worst
+          you can ever be is 5. That isn't decoration: without wrapping, a day whose target was 000000000
+          would be nearly twice as hard as one of 555555555, and days would stop being comparable.
         </p>
-        <h3>Improbability</h3>
+
+        <h3>Spending re-rolls</h3>
         <p>
-          Every roll scores this one. It looks at the roll's <em>shape</em> — how many of each digit you got,
-          ignoring order — and computes the exact probability of that shape. The payout is proportional to
-          <code>1 / &radic;P</code>, so a shape twice as rare pays about 1.41&times; as much.
+          There are only three, and an unspent one is worth points at the end &mdash; so a mediocre digit
+          early is usually worth keeping, while the same digit on the last lane is worth burning a re-roll on.
+          Judging that is the whole game.
         </p>
-        <h3>Arrangement factors</h3>
-        <p>
-          Improbability is blind to order, so the rest of the panel rewards it: identical runs, ascending and
-          descending straights, palindromes, alternating patterns, arithmetic sequences, repeated halves and
-          trailing zeros.
-        </p>
-        <h3>Number theory &amp; culture</h3>
-        <p>
-          The nine digits are also read as a single integer — primes and perfect squares pay out — and scanned
-          for a short list of numbers that people care about for entirely unmathematical reasons.
-        </p>
+
         <h3>Ranks are real</h3>
         <p id="help-calibration">
-          Ranks are not arbitrary thresholds. The scoring engine was run over millions of simulated rolls, and
-          your rank is your position in that distribution. "Top 0.01%" means exactly that.
+          Your rank is your position in a measured distribution, not an arbitrary threshold.
         </p>
-        <h3>Daily Challenge</h3>
-        <p>
-          One roll per player per UTC day, derived from your player ID and the date. You cannot reroll it —
-          refreshing or switching browsers reproduces the same nine digits. It is also the only mode a server
-          can fully verify, since the Daily leaderboard recomputes your roll rather than taking your word for
-          it.
-        </p>
-        <h3>Setup</h3>
+
+        <h3>Sign-in</h3>
         <p id="help-setup"></p>
         <p class="setup-actions">
           <button type="button" class="share-btn" id="open-setup">Configure sign-in</button>

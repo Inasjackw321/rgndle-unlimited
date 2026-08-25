@@ -1,22 +1,28 @@
 /**
  * Achievements. Purely client-side and purely cosmetic — they exist to give
- * the endless mode something to chase besides the leaderboard.
+ * you something to chase besides the day's rank.
  *
- * Each definition gets a context object describing the roll that just happened
- * plus running totals, and returns true to unlock.
+ * Each definition gets a context describing the day that just finished plus
+ * running totals, and returns true to unlock.
  */
 
 import { STORES, read, write } from './profile.js';
+import { REROLLS_PER_DAY } from './scoring.js';
 
 const has = (ctx, name) => ctx.result.factors.some((f) => f.name === name);
-const factor = (ctx, name) => ctx.result.factors.find((f) => f.name === name);
+const spent = (ctx) => REROLLS_PER_DAY - ctx.result.rerollsLeft;
 
 export const ACHIEVEMENTS = [
   /* --- Getting started ------------------------------------------- */
-  { id: 'first-roll', icon: '🎲', name: 'First Contact', desc: 'Roll for the first time', test: (c) => c.totals.rolls >= 1 },
-  { id: 'rolls-25', icon: '🔁', name: 'Warmed Up', desc: 'Roll 25 times', test: (c) => c.totals.rolls >= 25 },
-  { id: 'rolls-100', icon: '💯', name: 'Committed', desc: 'Roll 100 times', test: (c) => c.totals.rolls >= 100 },
-  { id: 'rolls-1000', icon: '🗿', name: 'Ask For Help', desc: 'Roll 1,000 times', test: (c) => c.totals.rolls >= 1000 },
+  { id: 'first-day', icon: '🎯', name: 'First Contact', desc: 'Play your first day', test: (c) => c.totals.days >= 1 },
+  { id: 'days-7', icon: '📅', name: 'A Week In', desc: 'Play 7 days', test: (c) => c.totals.days >= 7 },
+  { id: 'days-30', icon: '🗓️', name: 'A Month In', desc: 'Play 30 days', test: (c) => c.totals.days >= 30 },
+  { id: 'days-100', icon: '💯', name: 'Centurion', desc: 'Play 100 days', test: (c) => c.totals.days >= 100 },
+
+  /* --- Streaks ---------------------------------------------------- */
+  { id: 'streak-3', icon: '🔥', name: 'Warming Up', desc: 'Play 3 days in a row', test: (c) => c.totals.streak >= 3 },
+  { id: 'streak-7', icon: '🌋', name: 'Seven Straight', desc: 'Play 7 days in a row', test: (c) => c.totals.streak >= 7 },
+  { id: 'streak-30', icon: '👑', name: 'Unbroken', desc: 'Play 30 days in a row', test: (c) => c.totals.streak >= 30 },
 
   /* --- Ranks ------------------------------------------------------ */
   { id: 'rank-c', icon: '🟩', name: 'Passable', desc: 'Reach rank C', test: (c) => c.rankIndex >= 3 },
@@ -32,155 +38,63 @@ export const ACHIEVEMENTS = [
   { id: 'rank-eternal', icon: '♾️', name: 'Eternal', desc: 'Reach rank ETERNAL', secret: true, test: (c) => c.rankIndex >= 13 },
   { id: 'rank-omega', icon: '🕳️', name: 'Reality Error', desc: 'Reach rank Ω', secret: true, test: (c) => c.rankIndex >= 14 },
 
-  /* --- Score milestones -------------------------------------------- */
-  { id: 'score-10k', icon: '📈', name: 'Five Figures', desc: 'Score 10,000 in one roll', test: (c) => c.result.total >= 10000 },
-  { id: 'score-100k', icon: '🚀', name: 'Six Figures', desc: 'Score 100,000 in one roll', test: (c) => c.result.total >= 100000 },
-  { id: 'score-1m', icon: '🌌', name: 'Seven Figures', desc: 'Score 1,000,000 in one roll', test: (c) => c.result.total >= 1000000 },
+  /* --- Bullseyes --------------------------------------------------- */
+  { id: 'bull-1', icon: '◎', name: 'On The Nose', desc: 'Land one digit exactly', test: (c) => c.result.bullseyes >= 1 },
+  { id: 'bull-2', icon: '🎯', name: 'Double Bullseye', desc: 'Land two digits exactly', test: (c) => c.result.bullseyes >= 2 },
+  { id: 'bull-3', icon: '🏹', name: 'Triple Bullseye', desc: 'Land three digits exactly', test: (c) => c.result.bullseyes >= 3 },
+  { id: 'bull-4', icon: '🎖️', name: 'Quad Bullseye', desc: 'Land four digits exactly', test: (c) => c.result.bullseyes >= 4 },
+  { id: 'bull-5', icon: '🏆', name: 'Five On The Nose', desc: 'Land five digits exactly', secret: true, test: (c) => c.result.bullseyes >= 5 },
+  { id: 'bull-7', icon: '👁️', name: 'Seeing The Future', desc: 'Land seven digits exactly', secret: true, test: (c) => c.result.bullseyes >= 7 },
+  { id: 'bull-9', icon: '🌌', name: 'PERFECT DAY', desc: 'Land all nine digits exactly', secret: true, test: (c) => c.result.bullseyes >= 9 },
+  { id: 'run-2', icon: '🔗', name: 'Back To Back', desc: 'Two bullseyes in a row', test: (c) => has(c, 'Bullseye Run') },
 
-  /* --- Patterns ---------------------------------------------------- */
-  { id: 'pair', icon: '👯', name: 'Two of a Kind', desc: 'Roll a pair', test: (c) => has(c, 'Pair') },
-  { id: 'triple', icon: '🎰', name: 'Three of a Kind', desc: 'Roll three identical digits in a row', test: (c) => has(c, 'Triple') },
-  { id: 'quad', icon: '🧱', name: 'Four of a Kind', desc: 'Roll four identical digits in a row', test: (c) => has(c, 'Quad') },
-  { id: 'quint', icon: '🏛️', name: 'Five of a Kind', desc: 'Roll five identical digits in a row', test: (c) => has(c, 'Quint') },
-  {
-    id: 'palindrome',
-    icon: '🪞',
-    name: 'Same Both Ways',
-    desc: 'Roll a nine-digit palindrome',
-    test: (c) => has(c, 'PERFECT PALINDROME'),
-  },
-  {
-    id: 'straight',
-    icon: '🪜',
-    name: 'Staircase',
-    desc: 'Roll five or more consecutive digits',
-    test: (c) => {
-      const f = factor(c, 'Ascending Straight') || factor(c, 'Descending Straight');
-      return Boolean(f) && Number(f.detail.match(/\d+/)?.[0] || 0) >= 5;
-    },
-  },
-  { id: 'prime', icon: '🔱', name: 'Indivisible', desc: 'Roll a prime number', test: (c) => has(c, 'Prime') },
-  { id: 'square', icon: '⬜', name: 'Perfectly Square', desc: 'Roll a perfect square', test: (c) => has(c, 'Perfect Square') },
-  {
-    id: 'pandigital',
-    icon: '🌈',
-    name: 'All Different',
-    desc: 'Roll nine distinct digits',
-    test: (c) => has(c, 'Near-Pandigital'),
-  },
-  { id: 'round', icon: '⭕', name: 'Nice And Round', desc: 'Roll three or more trailing zeros', test: (c) => has(c, 'Round Number') },
-  { id: 'alternating', icon: '🦓', name: 'Zebra', desc: 'Roll a perfect ABABABABA pattern', test: (c) => has(c, 'PERFECT ALTERNATION') },
+  /* --- Accuracy ----------------------------------------------------- */
+  { id: 'tight', icon: '📏', name: 'Tight Grouping', desc: 'Finish with a total distance of 12 or less', test: (c) => c.result.totalDistance <= 12 },
+  { id: 'tight-8', icon: '🪡', name: 'Threading It', desc: 'Finish with a total distance of 8 or less', test: (c) => c.result.totalDistance <= 8 },
+  { id: 'tight-4', icon: '💎', name: 'Surgical', desc: 'Finish with a total distance of 4 or less', secret: true, test: (c) => c.result.totalDistance <= 4 },
+  { id: 'consistent', icon: '🧱', name: 'No Bad Digits', desc: 'Finish with no digit further than 2 away', test: (c) => has(c, 'No Bad Digits') },
+  { id: 'nomiss', icon: '🛡️', name: 'Nothing Wild', desc: 'Finish with no digit further than 1 away', secret: true, test: (c) => c.result.worst <= 1 },
 
-  /* --- Digit alphabets --------------------------------------------- */
+  /* --- Re-roll discipline -------------------------------------------- */
+  { id: 'thrifty', icon: '🪙', name: 'Thrifty', desc: 'Finish a day without spending a re-roll', test: (c) => spent(c) === 0 },
+  { id: 'allin', icon: '🎰', name: 'All In', desc: 'Spend all three re-rolls in one day', test: (c) => spent(c) === REROLLS_PER_DAY },
   {
-    id: 'binary',
-    icon: '💾',
-    name: 'Binary',
-    desc: 'Roll nothing but zeros and ones',
+    id: 'thrifty-good',
+    icon: '🧘',
+    name: 'Calm Hands',
+    desc: 'Reach rank A or better without spending a re-roll',
+    test: (c) => spent(c) === 0 && c.rankIndex >= 5,
+  },
+  {
+    id: 'clutch',
+    icon: '🫰',
+    name: 'Clutch',
+    desc: 'Spend all three re-rolls and still reach rank A',
+    test: (c) => spent(c) === REROLLS_PER_DAY && c.rankIndex >= 5,
+  },
+
+  /* --- The other end -------------------------------------------------- */
+  {
+    id: 'rough',
+    icon: '🫠',
+    name: 'Rough Day',
+    desc: 'Finish with a total distance of 33 or more',
+    test: (c) => c.result.totalDistance >= 33,
+  },
+  {
+    id: 'antipode',
+    icon: '🙃',
+    name: 'PERFECTLY WRONG',
+    desc: 'Land every single digit as far from the target as possible',
     secret: true,
-    test: (c) => has(c, 'BINARY'),
-  },
-  { id: 'primedigits', icon: '🧮', name: 'Prime Cuts', desc: 'Roll only prime digits', test: (c) => has(c, 'Prime Digits') },
-  { id: 'alleven', icon: '⚖️', name: 'All Even', desc: 'Roll no odd digits', test: (c) => has(c, 'All Even') },
-  { id: 'allodd', icon: '🎯', name: 'All Odd', desc: 'Roll no even digits', test: (c) => has(c, 'All Odd') },
-
-  /* --- Ordering ----------------------------------------------------- */
-  { id: 'sorted', icon: '📶', name: 'In Order', desc: 'Roll digits that never decrease', test: (c) => has(c, 'Sorted') },
-  {
-    id: 'reversesorted',
-    icon: '📉',
-    name: 'Backwards',
-    desc: 'Roll digits that never increase',
-    test: (c) => has(c, 'Reverse Sorted'),
-  },
-  { id: 'stutter', icon: '🗣️', name: 'S-S-Stutter', desc: 'Roll AABBCCDD', test: (c) => has(c, 'Stutter') },
-  {
-    id: 'wrapped',
-    icon: '🔄',
-    name: 'Round the Bend',
-    desc: 'Roll a straight through the 9-0 seam',
-    test: (c) => has(c, 'Wrapped Straight'),
-  },
-
-  /* --- Number theory ------------------------------------------------- */
-  { id: 'cube', icon: '🧊', name: 'Cubed', desc: 'Roll a perfect cube', test: (c) => has(c, 'Perfect Cube') },
-  {
-    id: 'pow2',
-    icon: '💻',
-    name: 'Power of Two',
-    desc: 'Roll an exact power of two',
-    secret: true,
-    test: (c) => has(c, 'Power of Two'),
+    test: (c) => has(c, 'PERFECTLY WRONG'),
   },
   {
-    id: 'fibnumber',
-    icon: '🐚',
-    name: 'Golden Spiral',
-    desc: 'Roll a Fibonacci number',
-    secret: true,
-    test: (c) => has(c, 'Fibonacci Number'),
-  },
-  { id: 'triangular', icon: '🔺', name: 'Triangular', desc: 'Roll a triangular number', test: (c) => has(c, 'Triangular Number') },
-  { id: 'answer', icon: '🐬', name: 'So Long, and Thanks', desc: 'Roll a digit sum of exactly 42', test: (c) => has(c, 'The Answer') },
-
-  /* --- Culture ----------------------------------------------------- */
-  { id: 'nice', icon: '😎', name: 'Nice', desc: 'Roll a 69', test: (c) => has(c, 'Nice') },
-  { id: 'blaze', icon: '🌿', name: 'Blaze It', desc: 'Roll a 420', test: (c) => has(c, 'Blaze It') },
-  { id: 'leet', icon: '🕶️', name: 'Elite', desc: 'Roll a 1337', test: (c) => has(c, 'Leetspeak') },
-  { id: 'sacred', icon: '🛐', name: 'The Sacred Number', desc: 'Roll 42069', secret: true, test: (c) => has(c, 'The Sacred Number') },
-  { id: 'beast', icon: '😈', name: 'Number of the Beast', desc: 'Roll a 666', test: (c) => has(c, 'Number of the Beast') },
-  { id: 'pi', icon: '🥧', name: 'Irrational', desc: 'Roll the first digits of π', secret: true, test: (c) => has(c, 'Slice of π') },
-
-  /* --- Multipliers and streaks -------------------------------------- */
-  { id: 'cosmic-5', icon: '🔮', name: 'Divine Favour', desc: 'Land a ×5 cosmic multiplier', test: (c) => c.result.cosmic.value >= 5 },
-  { id: 'cosmic-10', icon: '☄️', name: 'Transcendent', desc: 'Land a ×10 cosmic multiplier', test: (c) => c.result.cosmic.value >= 10 },
-  { id: 'cosmic-25', icon: '💥', name: 'Reality Broken', desc: 'Land a ×25 cosmic multiplier', secret: true, test: (c) => c.result.cosmic.value >= 25 },
-  {
-    id: 'cosmic-100',
-    icon: '🌀',
-    name: 'IMPOSSIBLE',
-    desc: 'Land the ×100 cosmic multiplier',
-    secret: true,
-    test: (c) => c.result.cosmic.value >= 100,
-  },
-  {
-    id: 'stacked',
-    icon: '🥞',
-    name: 'Stacked',
-    desc: 'Score a roll with six or more factors at once',
-    test: (c) => c.result.factors.length >= 6,
-  },
-  {
-    id: 'loaded',
-    icon: '🎁',
-    name: 'Everything Everywhere',
-    desc: 'Score a roll with nine or more factors at once',
-    secret: true,
-    test: (c) => c.result.factors.length >= 9,
-  },
-  { id: 'streak-5', icon: '🔥', name: 'On A Roll', desc: 'Beat your previous score five times running', test: (c) => c.totals.streak >= 5 },
-  { id: 'streak-8', icon: '🌋', name: 'Unstoppable', desc: 'Beat your previous score eight times running', test: (c) => c.totals.streak >= 8 },
-
-  /* --- Daily -------------------------------------------------------- */
-  { id: 'daily-first', icon: '📅', name: 'Daily Habit', desc: 'Play a Daily Challenge', test: (c) => c.mode === 'daily' },
-  { id: 'daily-7', icon: '🗓️', name: 'Seven Days', desc: 'Play the Daily seven days in a row', test: (c) => c.totals.dailyStreak >= 7 },
-  { id: 'daily-30', icon: '👑', name: 'A Whole Month', desc: 'Play the Daily thirty days in a row', test: (c) => c.totals.dailyStreak >= 30 },
-
-  /* --- Odds and ends ------------------------------------------------ */
-  {
-    id: 'the-void',
-    icon: '🌑',
-    name: 'The Void',
-    desc: 'Roll nine identical digits',
-    secret: true,
-    test: (c) => has(c, 'MONOLITH'),
-  },
-  {
-    id: 'witching',
-    icon: '🕐',
-    name: 'Right On Time',
-    desc: 'Roll during a mirror hour',
-    test: (c) => c.result.multipliers.some((m) => m.id === 'time'),
+    id: 'zero-bulls',
+    icon: '🌵',
+    name: 'Dry Spell',
+    desc: 'Finish a day without a single bullseye',
+    test: (c) => c.result.bullseyes === 0,
   },
 ];
 
@@ -191,8 +105,8 @@ export function loadUnlocked(playerId) {
 }
 
 /**
- * Evaluates every achievement against a completed roll.
- * @returns {Array} the definitions unlocked by *this* roll
+ * Evaluates every achievement against a finished day.
+ * @returns {Array} the definitions unlocked by *this* day
  */
 export function evaluate(ctx) {
   const unlocked = loadUnlocked(ctx.playerId);

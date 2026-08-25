@@ -2,45 +2,37 @@
  * Game loop and wiring.
  */
 
-import { rollDigits, rollCosmic, scoreRoll, timeBonus, highlightIndices } from './scoring.js';
+import { ROLL_LENGTH, REROLLS_PER_DAY, rollDigit, distance } from './scoring.js';
 import { percentileOf, rankFor, celebration, RANKS, SAMPLE_SIZE } from './ranks.js';
-import { mountReels, spin, setDigits, highlight, clearHighlights } from './reels.js';
 import {
-  startStarfield,
-  initParticles,
-  burst,
-  countUp,
-  shake,
-  wait,
-  pressRipple,
-  buzz,
-} from './fx.js';
+  mountLanes,
+  setTarget,
+  setDigit,
+  setDelta,
+  setLaneState,
+  markSettled,
+  spinOne,
+  flashBullseye,
+  laneElement,
+} from './reels.js';
+import { startStarfield, initParticles, burst, countUp, shake, pressRipple, buzz } from './fx.js';
 import * as audio from './audio.js';
 import * as auth from './auth.js';
 import * as board from './leaderboard.js';
 import * as daily from './daily.js';
+import * as game from './game.js';
 import * as achievements from './achievements.js';
 import * as share from './share.js';
 import * as profile from './profile.js';
-import {
-  resolved,
-  overrides,
-  saveOverrides,
-  clearOverrides,
-  isValidGoogleClientId,
-  jsOrigin,
-} from './config.js';
+import { resolved, overrides, saveOverrides, clearOverrides, isValidGoogleClientId, jsOrigin } from './config.js';
 import * as ui from './ui.js';
 
 const state = {
-  rolling: false,
-  mode: 'endless',
-  scope: 'all',
+  busy: false,
+  scope: 'daily',
   history: [],
-  streak: 0,
-  lastTotal: null,
-  lastResult: null,
   countdownTimer: null,
+  lastResult: null,
 };
 
 /* ------------------------------------------------------------------ *
@@ -58,60 +50,37 @@ function random() {
   return pool[poolIndex++] / 4294967296;
 }
 
-/* ------------------------------------------------------------------ *
- * Identity
- * ------------------------------------------------------------------ */
-
-function playerId() {
-  return auth.playerKey() || daily.guestId();
-}
+const playerId = () => auth.playerKey() || daily.guestId();
 
 /* ------------------------------------------------------------------ *
- * History persistence
+ * Stored results
  * ------------------------------------------------------------------ */
 
 function loadHistory() {
   state.history = profile.read(profile.STORES.history, playerId(), []);
 }
 
-function saveHistory(entry) {
-  state.history.unshift(entry);
-  state.history = state.history.slice(0, resolved().historyLimit);
+function saveResult(entry) {
+  // One row per day: replaying the same day should update, never duplicate.
+  state.history = [entry, ...state.history.filter((h) => h.day !== entry.day)].slice(
+    0,
+    resolved().historyLimit,
+  );
   profile.write(profile.STORES.history, playerId(), state.history);
 }
 
-/* ------------------------------------------------------------------ *
- * Daily streak
- * ------------------------------------------------------------------ */
-
-function readDailyStreak() {
+function readStreak() {
   return profile.read(profile.STORES.dailyStreak, playerId(), { count: 0, last: null });
 }
 
 /** Increments when today follows yesterday, resets after any gap. */
-function bumpDailyStreak(today = daily.dateKey()) {
-  const record = readDailyStreak();
+function bumpStreak(today = daily.dateKey()) {
+  const record = readStreak();
   if (record.last === today) return record.count;
-
   const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
   const count = record.last === yesterday ? record.count + 1 : 1;
   profile.write(profile.STORES.dailyStreak, playerId(), { count, last: today });
   return count;
-}
-
-/**
- * Repaints everything that belongs to the current identity. Called on load and
- * whenever the signed-in account changes, so switching accounts swaps the whole
- * profile rather than leaving the previous player's data on screen.
- */
-function reloadProfile() {
-  loadHistory();
-  ui.renderHistory(state.history);
-  ui.renderStats(state.history);
-  ui.renderAwards(achievements.ACHIEVEMENTS, achievements.progress(playerId()).unlocked);
-  // The hot streak belongs to the player who built it, not to the browser tab.
-  state.streak = 0;
-  state.lastTotal = null;
 }
 
 /* ------------------------------------------------------------------ *
@@ -129,7 +98,7 @@ async function refreshBoard() {
 }
 
 /* ------------------------------------------------------------------ *
- * Daily mode presentation
+ * Painting the board state
  * ------------------------------------------------------------------ */
 
 function stopCountdown() {
@@ -142,9 +111,9 @@ function stopCountdown() {
 function startCountdown() {
   stopCountdown();
   const paint = () => {
-    ui.setDailyStatus(
-      `Next Daily in <b>${daily.formatCountdown(daily.msUntilNextDaily())}</b> · streak <b>${
-        readDailyStreak().count
+    ui.setStatus(
+      `Next target in <b>${daily.formatCountdown(daily.msUntilNextDaily())}</b> · streak <b>${
+        readStreak().count
       }</b>`,
     );
   };
@@ -152,118 +121,148 @@ function startCountdown() {
   state.countdownTimer = setInterval(paint, 1000);
 }
 
-/** Reflects whether today's Daily is still available in the button and dot. */
-function paintMode() {
-  const played = daily.playedToday(playerId());
-  ui.setDailyAvailable(state.mode !== 'daily' && !played);
+/** Redraws lanes, pips and controls from the persisted game state. */
+function paintGame({ animateLast = false } = {}) {
+  const snap = game.snapshot();
 
-  if (state.mode !== 'daily') {
-    stopCountdown();
-    ui.setDailyStatus(null);
-    ui.setRollButton({ label: 'ROLL', sub: 'press space', disabled: state.rolling });
+  setTarget(snap.target);
+  ui.renderRerolls(snap.rerollsLeft, REROLLS_PER_DAY);
+
+  for (let i = 0; i < ROLL_LENGTH; i++) {
+    if (i < snap.rolled.length) {
+      if (!animateLast || i < snap.rolled.length - 1) setDigit(i, snap.rolled[i], { silent: true });
+      markSettled(i, true);
+      setDelta(i, snap.distances[i]);
+      setLaneState(i, 'settled');
+    } else if (i === snap.index && snap.phase !== 'done') {
+      markSettled(i, snap.phase === 'deciding');
+      setDelta(i, snap.phase === 'deciding' ? distance(snap.target[i], snap.pending) : null);
+      setLaneState(i, snap.phase === 'deciding' ? 'pending' : 'active');
+      if (snap.phase === 'deciding') setDigit(i, snap.pending, { silent: true });
+    } else {
+      markSettled(i, false);
+      setDelta(i, null);
+      setLaneState(i, 'waiting');
+    }
+  }
+
+  if (snap.phase === 'done') {
+    ui.showDecision(false);
+    ui.setRollButton({ label: 'DONE FOR TODAY', sub: 'come back tomorrow', disabled: true });
+    startCountdown();
     return;
   }
 
-  if (played) {
-    startCountdown();
-    ui.setRollButton({ label: 'PLAYED', sub: 'come back tomorrow', disabled: true });
+  stopCountdown();
+
+  if (snap.phase === 'deciding') {
+    ui.showDecision(true);
+    ui.setDecision({
+      distance: distance(snap.target[snap.index], snap.pending),
+      rerollsLeft: snap.rerollsLeft,
+      isLast: snap.index === ROLL_LENGTH - 1,
+    });
+    ui.setStatus(
+      `Digit <b>${snap.index + 1}</b> of ${ROLL_LENGTH} · aiming for <b>${snap.target[snap.index]}</b>`,
+    );
   } else {
-    stopCountdown();
-    ui.setDailyStatus(`Daily Challenge for <b>${daily.dateKey()}</b> · one roll, no rerolls`);
-    ui.setRollButton({ label: 'ROLL DAILY', sub: 'press space', disabled: state.rolling });
-  }
-}
-
-/** Re-displays an already-played Daily without re-animating the reels. */
-function showPlayedDaily() {
-  const played = daily.playedToday(playerId());
-  if (!played) return;
-
-  const digits = [...played.digits].map(Number);
-  setDigits(digits);
-  highlight(highlightIndices(digits));
-
-  const rank = RANKS.find((r) => r.label === played.rank) || RANKS[0];
-  ui.setRankColor(rank);
-  document.querySelector('.machine').classList.add('is-lit');
-  ui.setCosmic({ value: played.cosmic, label: 'locked in' });
-  ui.showVerdict();
-  ui.el('verdict-score').textContent = played.score.toLocaleString();
-  ui.renderRank(rank);
-  ui.renderRarity(played.percentile, rank);
-  ui.renderMeta(played.result || { display: played.digits, base: played.base ?? 0, multiplier: played.multipliers, factors: played.factors || [] });
-  if (played.result) {
-    ui.renderFactors(played.result);
-    state.lastResult = { result: played.result, rank, percentile: played.percentile, mode: 'daily', day: played.day };
-    ui.showShare(true);
-  } else {
-    ui.showShare(false);
+    ui.showDecision(false);
+    ui.setRollButton({
+      label: `ROLL DIGIT ${snap.index + 1}`,
+      sub: 'press space',
+      disabled: state.busy,
+    });
+    ui.setStatus(
+      `Digit <b>${snap.index + 1}</b> of ${ROLL_LENGTH} · aiming for <b>${snap.target[snap.index]}</b>`,
+    );
   }
 }
 
 /* ------------------------------------------------------------------ *
- * The roll
+ * Actions
  * ------------------------------------------------------------------ */
 
 async function roll() {
-  if (state.rolling) return;
+  const snap = game.snapshot();
+  if (state.busy || snap.phase !== 'ready') return;
 
-  const isDaily = state.mode === 'daily';
-  const me = playerId();
-  if (isDaily && daily.playedToday(me)) return;
-
-  state.rolling = true;
-  const machine = document.querySelector('.machine');
-  ui.setRollButton({
-    label: isDaily ? 'ROLL DAILY' : 'ROLL',
-    sub: 'rolling…',
-    disabled: true,
-  });
+  state.busy = true;
+  ui.setRollButton({ label: `ROLL DIGIT ${snap.index + 1}`, sub: 'rolling…', disabled: true });
   audio.unlock();
 
-  ui.clearVerdict();
-  ui.showShare(false);
-  ui.resetCosmic();
-  ui.setDailyStatus(null);
-  clearHighlights();
-  machine.classList.remove('is-lit');
-
-  const { digits, cosmic } = isDaily
-    ? daily.dailyRoll(daily.dateKey(), me)
-    : { digits: rollDigits(random), cosmic: rollCosmic(random) };
-
-  // The Daily is a single fixed roll, so session multipliers would make the
-  // board depend on how much you played beforehand. Keep it clean.
-  const streak =
-    !isDaily && state.streak > 0
-      ? { value: 1 + Math.min(state.streak, 10) * 0.1, label: `Hot Streak ×${state.streak}` }
-      : null;
-  const time = isDaily ? null : timeBonus();
-
+  const i = snap.index;
+  setLaneState(i, 'active');
   audio.whoosh();
-  await spin(digits, (i) => audio.tick(i));
 
-  const result = { ...scoreRoll(digits, cosmic, { streak, time }), cosmic };
+  const digit = rollDigit(random);
+  await spinOne(i, digit);
+  audio.tick(i);
+
+  const next = game.settle(digit);
+  const d = distance(snap.target[i], digit);
+
+  setDigit(i, digit, { silent: true });
+  setDelta(i, d);
+  markSettled(i, true);
+
+  if (d === 0) {
+    flashBullseye(i);
+    audio.cosmicHit(5);
+    burst(laneElement(i), { count: 60, colors: ['#4ade80', '#ffffff'], power: 0.9 });
+  }
+
+  state.busy = false;
+
+  // settle() auto-keeps when no re-rolls remain, so the phase tells us whether
+  // a decision was actually offered.
+  if (next.phase === 'done') return finish();
+  paintGame();
+}
+
+function keep() {
+  if (state.busy) return;
+  audio.release();
+  const next = game.keep();
+  if (next.phase === 'done') return finish();
+  paintGame();
+}
+
+function doReroll() {
+  if (state.busy) return;
+  const snap = game.snapshot();
+  if (snap.rerollsLeft <= 0) return;
+
+  audio.thud();
+  buzz(18);
+  const i = snap.index;
+  setDelta(i, null);
+  markSettled(i, false);
+  game.reroll();
+  paintGame();
+}
+
+/* ------------------------------------------------------------------ *
+ * Finishing the day
+ * ------------------------------------------------------------------ */
+
+async function finish() {
+  const result = game.result();
+  if (!result) return;
+
   const percentile = percentileOf(result.total);
   const rank = rankFor(percentile);
   const rankIndex = RANKS.indexOf(rank);
+  const machine = document.querySelector('.machine');
 
-  await wait(160);
-  ui.setCosmic(cosmic);
-  audio.cosmicHit(cosmic.value);
-
-  await wait(340);
-
+  paintGame();
   ui.setRankColor(rank);
   machine.classList.add('is-lit');
   ui.showVerdict();
   ui.renderMeta(result);
-  highlight(highlightIndices(digits));
 
-  const countDuration = 900 + Math.min(rankIndex, 12) * 70;
   audio.counting(6 + rankIndex);
   ui.renderFactors(result);
-  await countUp(ui.el('verdict-score'), result.total, countDuration);
+  await countUp(ui.el('verdict-score'), result.total, 900 + Math.min(rankIndex, 12) * 70);
 
   ui.renderRank(rank);
   ui.renderRarity(percentile, rank);
@@ -275,7 +274,6 @@ async function roll() {
     shake(document.body, true);
     burst(ui.el('verdict-rank'), { count: 260, colors: [rank.color, '#fff', '#ffc857'], power: 1.6 });
     setTimeout(() => burst(machine, { count: 180, colors: [rank.color, '#fff'], power: 1.35 }), 260);
-    setTimeout(() => burst(ui.el('reels'), { count: 140, colors: [rank.color, '#ffc857'], power: 1.2 }), 520);
   } else if (party >= 2) {
     audio.thud();
     shake(document.body, true);
@@ -287,38 +285,23 @@ async function roll() {
     burst(ui.el('verdict-rank'), { count: 70, colors: [rank.color] });
   }
 
-  // Streak is judged against the previous roll only, and only in endless mode.
-  if (!isDaily) {
-    state.streak = state.lastTotal !== null && result.total > state.lastTotal ? state.streak + 1 : 0;
-    state.lastTotal = result.total;
-  }
-
-  const entry = board.entryFor(result, percentile, rank, { mode: state.mode });
-  saveHistory(entry);
+  const streak = bumpStreak(result.day || daily.dateKey());
+  const entry = board.entryFor(result, percentile, rank);
+  saveResult(entry);
+  loadHistory();
   ui.renderHistory(state.history);
-  ui.renderStats(state.history);
+  ui.renderStats(state.history, streak);
 
-  const dailyStreak = isDaily ? bumpDailyStreak() : readDailyStreak().count;
-  if (isDaily) {
-    daily.markPlayed(me, { ...entry, result, base: result.base, percentile });
-  }
-
-  state.lastResult = { result, rank, percentile, mode: state.mode, day: entry.day };
+  state.lastResult = { result, rank, percentile };
   ui.showShare(true);
 
-  // Achievements
   const unlocked = achievements.evaluate({
-    playerId: me,
+    playerId: playerId(),
     result,
     rank,
     rankIndex,
     percentile,
-    mode: state.mode,
-    totals: {
-      rolls: state.history.length,
-      streak: state.streak,
-      dailyStreak,
-    },
+    totals: { days: state.history.length, streak },
   });
   unlocked.forEach((award, i) => {
     setTimeout(() => {
@@ -327,19 +310,16 @@ async function roll() {
     }, 500 + i * 700);
   });
   if (unlocked.length) {
-    ui.renderAwards(achievements.ACHIEVEMENTS, achievements.progress(me).unlocked);
+    ui.renderAwards(achievements.ACHIEVEMENTS, achievements.progress(playerId()).unlocked);
   }
 
   try {
-    await board.submitScore(entry, isDaily ? 'daily' : 'all');
+    await board.submitScore(entry, 'daily');
     ui.notice(null);
   } catch (err) {
     ui.notice(`Could not submit score: ${err.message}`);
   }
   await refreshBoard();
-
-  state.rolling = false;
-  paintMode();
 }
 
 /* ------------------------------------------------------------------ *
@@ -355,22 +335,20 @@ function setupHelp() {
   });
 
   ui.el('help-calibration').textContent =
-    `Ranks are not arbitrary thresholds. The scoring engine was run over ${SAMPLE_SIZE.toLocaleString()} ` +
-    'simulated rolls, and your rank is your position in that distribution. "Top 0.01%" means exactly that.';
+    `Your rank is your position among ${SAMPLE_SIZE.toLocaleString()} simulated days played by a ` +
+    'solver that always makes the best re-roll decision. Beating the percentile means you got luckier ' +
+    'than perfect play, not that you out-thought it.';
 
   setupHelpText();
 }
 
 function setupHelpText() {
   const setup = ui.el('help-setup');
-  if (resolved().googleClientId) {
-    setup.textContent = `Google sign-in is enabled. The leaderboard is ${
-      board.isShared() ? 'shared across all players.' : 'stored on this device only.'
-    }`;
-  } else {
-    setup.textContent =
-      'Google sign-in is not configured yet. It takes about a minute and needs no server — a client ID is public.';
-  }
+  setup.textContent = resolved().googleClientId
+    ? `Google sign-in is enabled. The leaderboard is ${
+        board.isShared() ? 'shared across all players.' : 'stored on this device only.'
+      }`
+    : 'Google sign-in is not configured yet. It takes about a minute and needs no server — a client ID is public.';
 }
 
 function setupSetupDialog() {
@@ -410,10 +388,7 @@ function setupSetupDialog() {
 
   ui.el('setup-clear').addEventListener('click', () => {
     clearOverrides();
-    // Without a client ID the session could never be renewed, so ending it
-    // here is clearer than leaving a chip that can't re-authenticate.
     auth.logout();
-    reloadProfile();
     googleIdInput.value = '';
     endpointInput.value = '';
     error.hidden = true;
@@ -434,9 +409,7 @@ function setupSetupDialog() {
     const googleId = googleIdInput.value.trim();
     const endpoint = endpointInput.value.trim();
 
-    if (!googleId) {
-      return fail('Paste your Google client ID to enable sign-in.', googleIdInput);
-    }
+    if (!googleId) return fail('Paste your Google client ID to enable sign-in.', googleIdInput);
     if (!isValidGoogleClientId(googleId)) {
       return fail(
         'That does not look like a Google client ID. It ends in .apps.googleusercontent.com — copy the Client ID, not the client secret.',
@@ -446,14 +419,12 @@ function setupSetupDialog() {
     if (endpoint && !/^https?:\/\//.test(endpoint)) {
       return fail('The leaderboard endpoint must start with https://', endpointInput);
     }
-
     if (!saveOverrides({ googleClientId: googleId, leaderboardEndpoint: endpoint })) {
       return fail('This browser is blocking storage, so settings cannot be saved here.');
     }
 
     dialog.close();
     setupHelpText();
-    // Repainting mounts Google's button, which is how sign-in is started.
     paintAuth(auth.currentSession());
   });
 
@@ -476,13 +447,11 @@ function setupSound() {
 }
 
 /**
- * Press feedback. Deliberately fires on pointerdown rather than click: the gap
- * between pressing and releasing is exactly where a button feels dead, and the
- * sound, ripple and haptic all belong at the moment of contact.
+ * Press feedback fires on pointerdown rather than click: the gap between
+ * pressing and releasing is exactly where a button feels dead.
  */
 function setupRollButton() {
   const btn = ui.el('roll-btn');
-
   const down = (event) => {
     if (btn.disabled) return;
     btn.classList.add('is-pressed');
@@ -491,25 +460,20 @@ function setupRollButton() {
     buzz(12);
     pressRipple(btn, event);
   };
-
   const up = () => btn.classList.remove('is-pressed');
 
   btn.addEventListener('pointerdown', down);
-  btn.addEventListener('pointerup', up);
-  btn.addEventListener('pointerleave', up);
-  btn.addEventListener('pointercancel', up);
-  btn.addEventListener('click', () => {
-    audio.release();
-    roll();
-  });
+  for (const evt of ['pointerup', 'pointerleave', 'pointercancel']) btn.addEventListener(evt, up);
+  btn.addEventListener('click', roll);
 
-  // Keyboard activation gets the same treatment, including from the space-bar
-  // shortcut, so it never feels like the lesser path.
   window.addEventListener('rngdle:press', () => {
     if (btn.disabled) return;
     down();
     setTimeout(up, 110);
   });
+
+  ui.el('keep-btn').addEventListener('click', keep);
+  ui.el('reroll-btn').addEventListener('click', doReroll);
 }
 
 function setupKeyboard() {
@@ -517,32 +481,42 @@ function setupKeyboard() {
     if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
     const tag = document.activeElement?.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA') return;
-    if (ui.el('help-dialog').open) return;
+    if (ui.el('help-dialog').open || ui.el('setup-dialog').open) return;
+
+    const phase = game.snapshot().phase;
+
     if (e.code === 'Space' || e.code === 'Enter') {
       e.preventDefault();
-      window.dispatchEvent(new Event('rngdle:press'));
-      roll();
+      if (phase === 'deciding') keep();
+      else {
+        window.dispatchEvent(new Event('rngdle:press'));
+        roll();
+      }
+      return;
+    }
+    // R is only meaningful while a digit is awaiting a decision.
+    if ((e.code === 'KeyR' || e.code === 'Backspace') && phase === 'deciding') {
+      e.preventDefault();
+      doReroll();
     }
   });
 }
 
 function setupShare() {
-  // Note: these handlers await, so they must capture the button up front —
-  // event.currentTarget is null once dispatch has finished.
   const cardBtn = ui.el('share-card');
   const textBtn = ui.el('share-text');
 
   cardBtn.addEventListener('click', async () => {
     if (!state.lastResult) return;
-    const { result, rank, percentile, mode, day } = state.lastResult;
-    const user = auth.currentSession()?.user;
+    const { result, rank, percentile } = state.lastResult;
+    const user = auth.currentUser();
     const canvas = share.renderCard(result, rank, percentile, {
-      mode,
-      day,
-      player: user ? auth.displayName(user) : null,
+      day: daily.dateKey(),
+      puzzle: daily.puzzleNumber(),
+      player: user ? user.name : null,
     });
     try {
-      const outcome = await share.shareCard(canvas, `rngdle-${result.display}.png`);
+      const outcome = await share.shareCard(canvas, `gussle-${daily.dateKey()}.png`);
       ui.flashButton(cardBtn, outcome === 'copied' ? 'Copied!' : 'Downloaded');
     } catch {
       ui.flashButton(cardBtn, 'Failed');
@@ -551,30 +525,50 @@ function setupShare() {
 
   textBtn.addEventListener('click', async () => {
     if (!state.lastResult) return;
-    const { result, rank, percentile, mode, day } = state.lastResult;
-    const ok = await share.copyText(share.shareText(result, rank, percentile, { mode, day }));
+    const { result, rank, percentile } = state.lastResult;
+    const ok = await share.copyText(
+      share.shareText(result, rank, percentile, { puzzle: daily.puzzleNumber() }),
+    );
     ui.flashButton(textBtn, ok ? 'Copied!' : 'Press Ctrl+C');
   });
 }
 
-function setupModes() {
-  ui.initModeSwitch((mode) => {
-    state.mode = mode;
-    ui.clearVerdict();
-    ui.showShare(false);
-    clearHighlights();
-    document.querySelector('.machine').classList.remove('is-lit');
-    if (mode === 'daily') showPlayedDaily();
-    paintMode();
-  });
+/* ------------------------------------------------------------------ *
+ * Identity
+ * ------------------------------------------------------------------ */
 
-  ui.initScopeSwitch((scope) => {
-    state.scope = scope;
-    refreshBoard();
-  });
+function reloadProfile() {
+  loadHistory();
+  game.load(playerId());
+  ui.renderHistory(state.history);
+  ui.renderStats(state.history, readStreak().count);
+  ui.renderAwards(achievements.ACHIEVEMENTS, achievements.progress(playerId()).unlocked);
+
+  ui.clearVerdict();
+  ui.showShare(false);
+  document.querySelector('.machine').classList.remove('is-lit');
+  paintGame();
+
+  if (game.isFinished()) {
+    // Re-display a day already played rather than pretending it's unplayed.
+    const result = game.result();
+    const percentile = percentileOf(result.total);
+    const rank = rankFor(percentile);
+    ui.setRankColor(rank);
+    document.querySelector('.machine').classList.add('is-lit');
+    ui.showVerdict();
+    ui.el('verdict-score').textContent = result.total.toLocaleString();
+    ui.renderRank(rank);
+    ui.renderRarity(percentile, rank);
+    ui.renderMeta(result);
+    ui.renderFactors(result);
+    state.lastResult = { result, rank, percentile };
+    ui.showShare(true);
+  }
 }
 
 let openSetup = () => {};
+let welcomedPlayer = null;
 
 function paintAuth(session) {
   ui.renderAuth(session, {
@@ -582,7 +576,9 @@ function paintAuth(session) {
     onSetup: () => openSetup(),
     mountButton: (host) => {
       auth.mountButton(host).catch((err) => {
-        host.textContent = err.message;
+        // Keep the top bar compact; the detail goes in the tooltip.
+        host.textContent = 'Sign-in unavailable';
+        host.title = err.message;
         host.className = 'google-host is-failed';
       });
     },
@@ -590,32 +586,19 @@ function paintAuth(session) {
       auth.logout();
       welcomedPlayer = null;
       reloadProfile();
-      paintMode();
       refreshBoard();
     },
   });
 }
 
-/**
- * Post-sign-in work, shared by every provider.
- *
- * Guarded on identity because it can be reached more than once for the same
- * account: Google's rendered button fires its callback *and* resolves the
- * promise `login()` is awaiting, and silent token renewal produces a fresh
- * session for a player who is already signed in. Neither should re-run the
- * welcome or re-migrate anything.
- */
-let welcomedPlayer = null;
-
 async function afterSignIn(session) {
   const key = auth.playerKey(session);
-  const isNewIdentity = key !== welcomedPlayer;
+  const isNew = key !== welcomedPlayer;
   welcomedPlayer = key;
 
-  if (isNewIdentity) {
+  if (isNew) {
     const movedScores = board.migrateGuestScores(session);
     const movedStores = profile.adoptGuestData(daily.guestId(), key);
-
     ui.toast({
       icon: movedScores || movedStores.length ? '📦' : '👋',
       label: 'SIGNED IN',
@@ -629,53 +612,45 @@ async function afterSignIn(session) {
 
   ui.notice(null);
   reloadProfile();
-  paintMode();
   await refreshBoard();
 }
-
-
 
 async function init() {
   startStarfield(ui.el('starfield'));
   initParticles(ui.el('particles'));
-  mountReels(ui.el('reels'));
+
+  const day = daily.dateKey();
+  ui.setPuzzleNumber(daily.puzzleNumber(day));
+  mountLanes(ui.el('lanes'), daily.dailyTarget(day));
+
   ui.initTabs();
+  ui.initScopeSwitch((scope) => {
+    state.scope = scope;
+    refreshBoard();
+  });
   setupHelp();
   setupSound();
   setupKeyboard();
   setupShare();
-  setupModes();
+  setupRollButton();
   openSetup = setupSetupDialog().open;
 
-  // Upgrade any pre-namespacing data before the first read.
   profile.migrateLegacy(daily.guestId());
-
   reloadProfile();
-  if (state.history.length) setDigits([...state.history[0].digits].map(Number));
 
-  setupRollButton();
-
-  // Google delivers credentials through its own callback, so adopt whatever
-  // its rendered button produces rather than waiting on a promise.
   auth.onSession((session) => {
     auth.adoptSession(session);
     afterSignIn(session);
   });
-
   auth.onAuthChange(paintAuth);
 
   const authError = await auth.initAuth();
   if (authError) ui.notice(authError);
-
-  // Auth resolves asynchronously, so the first paint above used the guest
-  // profile. Repaint now that we know who is actually signed in — and treat a
-  // restored session as already welcomed, so reloading isn't a fresh sign-in.
   if (auth.currentSession()) {
     welcomedPlayer = auth.playerKey();
     reloadProfile();
   }
 
-  paintMode();
   await refreshBoard();
 }
 

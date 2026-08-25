@@ -1,7 +1,7 @@
 {
-  "name": "rngdle-unlimited",
+  "name": "gussle",
   "version": "1.0.0",
-  "description": "Roll a nine-digit number and find out how rare your luck really was.",
+  "description": "One nine-digit target a day. Roll each digit and land as close as you can.",
   "type": "module",
   "private": true,
   "scripts": {

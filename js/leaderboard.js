@@ -20,8 +20,8 @@ import {
 } from './auth.js';
 import { dateKey, guestId } from './daily.js';
 
-const LOCAL_KEY = 'rngdle_leaderboard';
-const LOCAL_DAILY_KEY = 'rngdle_leaderboard_daily';
+const LOCAL_KEY = 'gussle_best';
+const LOCAL_DAILY_KEY = 'gussle_today';
 
 function read(key, fallback) {
   try {
@@ -48,30 +48,35 @@ const LocalBoard = {
   shared: false,
 
   async list(limit, scope) {
-    const entries =
-      scope === 'daily' ? (read(LOCAL_DAILY_KEY, { day: null, entries: [] }).day === dateKey()
-        ? read(LOCAL_DAILY_KEY, { entries: [] }).entries
-        : []) : read(LOCAL_KEY, []);
-    return entries.slice().sort((a, b) => b.score - a.score).slice(0, limit);
-  },
-
-  /** Keeps one row per player: their personal best. */
-  async submit(entry, { scope }) {
     if (scope === 'daily') {
       const store = read(LOCAL_DAILY_KEY, { day: null, entries: [] });
-      const entries = store.day === entry.day ? store.entries : [];
-      if (entries.some((e) => e.playerId === entry.playerId)) return { improved: false };
-      entries.push(entry);
-      write(LOCAL_DAILY_KEY, { day: entry.day, entries });
-      return { improved: true };
+      const entries = store.day === dateKey() ? store.entries : [];
+      return entries.slice().sort((a, b) => b.score - a.score).slice(0, limit);
     }
+    return read(LOCAL_KEY, [])
+      .slice()
+      .sort((a, b) => b.score - a.score)
+      .slice(0, limit);
+  },
 
-    const entries = read(LOCAL_KEY, []);
-    const at = entries.findIndex((e) => e.playerId === entry.playerId);
-    if (at === -1) entries.push(entry);
-    else if (entries[at].score < entry.score) entries[at] = entry;
+  /**
+   * Today's board holds one row per player; the all-time board holds each
+   * player's single best day.
+   */
+  async submit(entry) {
+    const store = read(LOCAL_DAILY_KEY, { day: null, entries: [] });
+    const today = store.day === entry.day ? store.entries : [];
+    const at = today.findIndex((e) => e.playerId === entry.playerId);
+    if (at === -1) today.push(entry);
+    else today[at] = entry;
+    write(LOCAL_DAILY_KEY, { day: entry.day, entries: today });
+
+    const best = read(LOCAL_KEY, []);
+    const existing = best.findIndex((e) => e.playerId === entry.playerId);
+    if (existing === -1) best.push(entry);
+    else if (best[existing].score < entry.score) best[existing] = entry;
     else return { improved: false };
-    write(LOCAL_KEY, entries);
+    write(LOCAL_KEY, best);
     return { improved: true };
   },
 };
@@ -155,16 +160,14 @@ function remoteBoard(endpoint) {
       return data.entries || [];
     },
 
-    async submit(entry, { scope }) {
+    async submit(entry) {
       // The stored identity outlives the token (Google ID tokens last about an
       // hour), so top it up before posting rather than eating a 401 first.
       if (currentSession() && !hasFreshToken()) await refreshToken();
       return post('/scores', {
-        mode: scope === 'daily' ? 'daily' : 'endless',
         day: entry.day,
         digits: entry.digits,
-        cosmic: entry.cosmic,
-        multipliers: entry.multipliers,
+        rerollsLeft: entry.rerollsLeft,
       });
     },
   };
@@ -183,29 +186,30 @@ export function isShared() {
   return activeBoard().shared;
 }
 
-/** Builds the row we send/store for a completed roll. */
-export function entryFor(result, percentile, rank, { mode = 'endless' } = {}) {
+/** Builds the row we send/store for a finished day. */
+export function entryFor(result, percentile, rank) {
   const user = currentUser();
   return {
     playerId: playerKey() || guestId(),
     name: user ? user.name : 'Guest',
     avatar: user ? user.avatar : null,
     score: result.total,
+    day: dateKey(),
     digits: result.display,
-    cosmic: result.cosmic?.value ?? 1,
-    multipliers: result.multiplier,
+    target: result.targetDisplay,
+    bullseyes: result.bullseyes,
+    totalDistance: result.totalDistance,
+    rerollsLeft: result.rerollsLeft,
     rank: rank.label,
     percentile,
-    mode,
-    day: mode === 'daily' ? dateKey() : undefined,
     at: Date.now(),
   };
 }
 
-export async function listTop(scope = 'all') {
+export async function listTop(scope = 'daily') {
   return activeBoard().list(resolved().leaderboardLimit, scope);
 }
 
-export async function submitScore(entry, scope = 'all') {
+export async function submitScore(entry, scope = 'daily') {
   return activeBoard().submit(entry, { scope });
 }

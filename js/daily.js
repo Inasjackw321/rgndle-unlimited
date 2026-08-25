@@ -1,23 +1,12 @@
 /**
- * Daily Challenge.
+ * The daily target.
  *
- * One roll per player per UTC day, derived deterministically from
- * (date, playerId). Two things fall out of that:
- *
- *   1. You cannot reroll it. Refreshing, clearing storage or opening another
- *      browser all reproduce the same nine digits.
- *   2. It is the one mode a server can *fully* verify. The Worker recomputes
- *      the digits from the authenticated user's ID and the date, so a daily
- *      submission cannot claim a roll the player didn't get — unlike the
- *      endless mode, where the roll genuinely happens client-side.
- *
- * The derivation is public, so a player can compute future days in advance.
- * That is harmless: knowing tomorrow's roll doesn't let you change it.
- *
- * Shared verbatim by the browser and the Worker — keep it dependency-free.
+ * One nine-digit number per UTC day, the same for every player. Unlike the
+ * rolls, the target is *meant* to be public — you are shown it before you play,
+ * so there is nothing to hide and the derivation can live in the client.
  */
 
-import { rollDigits, rollCosmic } from './scoring.js';
+import { ROLL_LENGTH } from './scoring.js';
 
 /** UTC so the whole world plays the same day. */
 export function dateKey(date = new Date()) {
@@ -27,6 +16,14 @@ export function dateKey(date = new Date()) {
 export function msUntilNextDaily(now = new Date()) {
   const next = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1);
   return next - now.getTime();
+}
+
+export function formatCountdown(ms) {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const h = String(Math.floor(total / 3600)).padStart(2, '0');
+  const m = String(Math.floor((total % 3600) / 60)).padStart(2, '0');
+  const s = String(total % 60).padStart(2, '0');
+  return `${h}:${m}:${s}`;
 }
 
 /* --- Deterministic PRNG (xmur3 seed -> mulberry32 stream) ----------- */
@@ -55,21 +52,23 @@ function mulberry32(seed) {
   };
 }
 
-/**
- * The roll for a given player on a given day.
- * @returns {{ digits: number[], cosmic: object }}
- */
-export function dailyRoll(day, playerId) {
-  const seed = xmur3(`rngdle-daily::${day}::${playerId}`);
-  // Discard the first value: xmur3's initial output correlates with input
-  // length, which would bias the leading digit across short/long player IDs.
-  seed();
+/** The nine digits everyone is aiming at on a given day. */
+export function dailyTarget(day = dateKey()) {
+  const seed = xmur3(`gussle::target::${day}`);
+  seed(); // xmur3's first output correlates with input length; discard it
   const rand = mulberry32(seed());
-  return { digits: rollDigits(rand), cosmic: rollCosmic(rand) };
+  return Array.from({ length: ROLL_LENGTH }, () => Math.floor(rand() * 10));
 }
 
-/** Stable per-browser identity so guests get a consistent daily too. */
-const GUEST_KEY = 'rngdle_guest_id';
+/** Puzzle number, counting from launch, for share text. */
+const EPOCH = Date.UTC(2026, 0, 1);
+export function puzzleNumber(day = dateKey()) {
+  return Math.floor((Date.parse(`${day}T00:00:00Z`) - EPOCH) / 86400000) + 1;
+}
+
+/* --- Stable per-browser identity for guests ------------------------ */
+
+const GUEST_KEY = 'gussle_guest_id';
 
 export function guestId() {
   try {
@@ -82,46 +81,4 @@ export function guestId() {
   } catch {
     return 'guest';
   }
-}
-
-/* --- Local record of today's attempt -------------------------------- */
-
-const PLAYED_KEY = 'rngdle_daily_played';
-
-export function readPlayed() {
-  try {
-    return JSON.parse(localStorage.getItem(PLAYED_KEY) || '{}');
-  } catch {
-    return {};
-  }
-}
-
-export function playedToday(playerId, day = dateKey()) {
-  const played = readPlayed();
-  const record = played[`${day}::${playerId}`];
-  return record || null;
-}
-
-export function markPlayed(playerId, entry, day = dateKey()) {
-  const played = readPlayed();
-  played[`${day}::${playerId}`] = entry;
-
-  // Keep the store from growing without bound.
-  const keys = Object.keys(played);
-  if (keys.length > 30) {
-    for (const key of keys.sort().slice(0, keys.length - 30)) delete played[key];
-  }
-  try {
-    localStorage.setItem(PLAYED_KEY, JSON.stringify(played));
-  } catch {
-    /* ignore */
-  }
-}
-
-export function formatCountdown(ms) {
-  const total = Math.max(0, Math.floor(ms / 1000));
-  const h = String(Math.floor(total / 3600)).padStart(2, '0');
-  const m = String(Math.floor((total % 3600) / 60)).padStart(2, '0');
-  const s = String(total % 60).padStart(2, '0');
-  return `${h}:${m}:${s}`;
 }

@@ -112,17 +112,17 @@ export function renderRarity(percentile, rank) {
 
 export function renderMeta(result) {
   const parts = [
-    `<b>${result.display}</b>`,
-    `base <b>${result.base.toLocaleString()}</b>`,
-    `×<b>${result.multiplier}</b>`,
-    `${result.factors.length} factor${result.factors.length === 1 ? '' : 's'}`,
+    `target <b>${result.targetDisplay}</b>`,
+    `you <b>${result.display}</b>`,
+    `<b>${result.bullseyes}</b> bullseye${result.bullseyes === 1 ? '' : 's'}`,
+    `distance <b>${result.totalDistance}</b>`,
   ];
   el('verdict-meta').innerHTML = parts.join(' · ');
 }
 
 /**
  * Card emphasis is absolute, not relative: a 4,200-point factor is a modest
- * factor even when it is the only one on a low-scoring roll.
+ * factor even when it is the only one on a low-scoring day.
  */
 function tierFor(points) {
   if (points >= 50000) return 'huge';
@@ -135,27 +135,16 @@ export function renderFactors(result, { stagger = 70 } = {}) {
   const box = el('factors');
   box.replaceChildren();
 
-  const cards = [
-    ...result.factors
-      .slice()
-      .sort((a, b) => b.points - a.points)
-      .map((f) => ({
-        kind: 'factor',
-        name: f.name,
-        detail: f.detail,
-        value: `+${f.points.toLocaleString()}`,
-        tier: tierFor(f.points),
-      })),
-    ...result.multipliers
-      .filter((m) => m.value !== 1)
-      .map((m) => ({
-        kind: 'multiplier',
-        name: m.name,
-        detail: 'multiplier',
-        value: `×${m.value}`,
-        tier: 'normal',
-      })),
-  ];
+  const cards = result.factors
+    .slice()
+    .sort((a, b) => b.points - a.points)
+    .map((f) => ({
+      kind: 'factor',
+      name: f.name,
+      detail: f.detail,
+      value: `+${f.points.toLocaleString()}`,
+      tier: tierFor(f.points),
+    }));
 
   cards.forEach((card, i) => {
     const node = document.createElement('div');
@@ -193,24 +182,6 @@ export function showVerdict() {
   el('verdict').dataset.state = 'shown';
 }
 
-export function setCosmic(cosmic) {
-  const box = el('cosmic');
-  el('cosmic-value').textContent = `×${cosmic.value}`;
-  el('cosmic-name').textContent = cosmic.label;
-  box.classList.toggle('is-big', cosmic.value >= 3);
-  if (cosmic.value > 1) {
-    box.classList.remove('is-big');
-    void box.offsetWidth;
-    box.classList.toggle('is-big', cosmic.value >= 3);
-  }
-}
-
-export function resetCosmic() {
-  el('cosmic-value').textContent = '—';
-  el('cosmic-name').textContent = 'rolling…';
-  el('cosmic').classList.remove('is-big');
-}
-
 /* ------------------------------------------------------------------ *
  * Sidebar
  * ------------------------------------------------------------------ */
@@ -229,12 +200,12 @@ export function renderBoard(entries, meId, { shared, error, scope = 'all' }) {
 
   if (scope === 'daily') {
     note.textContent = shared
-      ? "Today's Daily Challenge. Every entry is recomputed server-side, so this board cannot be faked."
-      : "Today's Daily Challenge, stored on this device.";
+      ? "Today's board. Everyone played the same target."
+      : "Today's board, stored on this device.";
   } else {
     note.textContent = shared
-      ? 'Global leaderboard — one entry per player, personal best.'
-      : 'On-device leaderboard. Configure a leaderboard endpoint to play against everyone else.';
+      ? 'Best single day, per player, all time.'
+      : 'Your best day so far. Configure a leaderboard endpoint to play against everyone else.';
   }
 
   if (error) {
@@ -243,11 +214,7 @@ export function renderBoard(entries, meId, { shared, error, scope = 'all' }) {
   }
   if (!entries.length) {
     list.append(
-      emptyState(
-        scope === 'daily'
-          ? 'Nobody has played today yet.'
-          : 'No scores yet.\nRoll something worth bragging about.',
-      ),
+      emptyState(scope === 'daily' ? 'Nobody has played today yet.' : 'No days played yet.'),
     );
     return;
   }
@@ -274,7 +241,10 @@ export function renderBoard(entries, meId, { shared, error, scope = 'all' }) {
     who.className = 'who';
     who.textContent = entry.name || 'Anonymous';
     const sub = document.createElement('small');
-    sub.textContent = entry.digits || '';
+    sub.textContent =
+      entry.bullseyes !== undefined
+        ? `${entry.bullseyes}◎ · dist ${entry.totalDistance}`
+        : entry.digits || '';
     who.append(sub);
 
     const rank = RANKS.find((r) => r.label === entry.rank);
@@ -298,7 +268,7 @@ export function renderHistory(entries) {
   list.replaceChildren();
 
   if (!entries.length) {
-    list.append(emptyState('Your rolls will show up here.'));
+    list.append(emptyState('Your past days will show up here.'));
     return;
   }
 
@@ -306,12 +276,12 @@ export function renderHistory(entries) {
     const li = document.createElement('li');
     li.style.animationDelay = `${Math.min(i, 12) * 22}ms`;
 
-    const digits = document.createElement('div');
-    digits.className = 'digits';
-    digits.textContent = entry.digits;
+    const main = document.createElement('div');
+    main.className = 'digits';
+    main.textContent = entry.digits;
     const sub = document.createElement('small');
-    sub.textContent = `×${entry.multipliers} · ${new Date(entry.at).toLocaleTimeString()}`;
-    digits.append(sub);
+    sub.textContent = `${entry.day} · ${entry.bullseyes}◎ · dist ${entry.totalDistance}`;
+    main.append(sub);
 
     const rank = RANKS.find((r) => r.label === entry.rank);
     const badge = document.createElement('span');
@@ -324,12 +294,12 @@ export function renderHistory(entries) {
     pts.textContent = entry.score.toLocaleString();
     pts.style.color = rank?.color || 'var(--text)';
 
-    li.append(digits, badge, pts);
+    li.append(main, badge, pts);
     list.append(li);
   });
 }
 
-export function renderStats(history) {
+export function renderStats(history, streak = 0) {
   const box = el('stats');
   box.replaceChildren();
 
@@ -337,21 +307,28 @@ export function renderStats(history) {
   const best = scores.length ? Math.max(...scores) : 0;
   const total = scores.reduce((a, b) => a + b, 0);
   const bestEntry = history.find((h) => h.score === best);
+  const bullseyes = history.reduce((a, h) => a + (h.bullseyes || 0), 0);
+  const perfectDigits = history.length * 9;
 
   const counts = new Map();
   for (const h of history) counts.set(h.rank, (counts.get(h.rank) || 0) + 1);
 
   const rows = [
-    ['Rolls', scores.length.toLocaleString()],
+    ['Days played', history.length.toLocaleString()],
+    ['Current streak', String(streak)],
     ['Best score', best.toLocaleString()],
-    ['Best roll', bestEntry ? bestEntry.digits : '—'],
+    ['Best day', bestEntry ? bestEntry.day : '—'],
     ['Best rank', bestEntry ? bestEntry.rank : '—'],
     ['Average', scores.length ? Math.round(total / scores.length).toLocaleString() : '—'],
+    [
+      'Bullseye rate',
+      perfectDigits ? `${((bullseyes / perfectDigits) * 100).toFixed(1)}%` : '—',
+    ],
     ['divider'],
     ['Global median', DISTRIBUTION.median.toLocaleString()],
     ['Global mean', Math.round(DISTRIBUTION.mean).toLocaleString()],
     ['99th percentile', DISTRIBUTION.p99.toLocaleString()],
-    ['Simulated rolls', SAMPLE_SIZE.toLocaleString()],
+    ['Days simulated', SAMPLE_SIZE.toLocaleString()],
   ];
 
   for (const [label, value] of rows) {
@@ -481,22 +458,8 @@ export function toast({ icon = '🏆', label = 'ACHIEVEMENT', name, desc }, dura
 }
 
 /* ------------------------------------------------------------------ *
- * Mode switch / daily status
+ * Controls
  * ------------------------------------------------------------------ */
-
-export function initModeSwitch(onChange) {
-  const buttons = [...document.querySelectorAll('.mode')];
-  for (const btn of buttons) {
-    btn.addEventListener('click', () => {
-      for (const b of buttons) {
-        const active = b === btn;
-        b.classList.toggle('is-active', active);
-        b.setAttribute('aria-selected', String(active));
-      }
-      onChange(btn.dataset.mode);
-    });
-  }
-}
 
 export function initScopeSwitch(onChange) {
   const buttons = [...document.querySelectorAll('.scope')];
@@ -512,25 +475,58 @@ export function initScopeSwitch(onChange) {
   }
 }
 
-export function setDailyAvailable(available) {
-  el('daily-dot').hidden = !available;
-}
-
-export function setDailyStatus(html) {
-  const box = el('daily-status');
-  if (!html) {
-    box.hidden = true;
-    return;
-  }
-  box.innerHTML = html;
-  box.hidden = false;
-}
-
 export function setRollButton({ label, sub, disabled }) {
   const btn = el('roll-btn');
   btn.querySelector('.roll-btn-label').textContent = label;
   btn.querySelector('.roll-btn-sub').textContent = sub;
   btn.disabled = disabled;
+}
+
+/** Swaps between the single ROLL button and the keep/re-roll pair. */
+export function showDecision(visible) {
+  el('roll-btn').hidden = visible;
+  el('decision').hidden = !visible;
+}
+
+export function setDecision({ distance, rerollsLeft, isLast }) {
+  el('reroll-sub').textContent = rerollsLeft === 1 ? '1 left' : `${rerollsLeft} left`;
+  el('reroll-btn').disabled = rerollsLeft <= 0;
+  el('keep-title').textContent = isLast ? 'Keep & finish' : 'Keep';
+  el('keep-sub').textContent =
+    distance === 0 ? 'bullseye!' : `distance ${distance}${distance >= 4 ? ' — ouch' : ''}`;
+}
+
+export function renderRerolls(left, total) {
+  const host = el('reroll-pips');
+  const existing = [...host.children];
+
+  if (existing.length !== total) {
+    host.replaceChildren();
+    for (let i = 0; i < total; i++) {
+      const pip = document.createElement('span');
+      pip.className = 'pip';
+      host.append(pip);
+    }
+  }
+
+  [...host.children].forEach((pip, i) => {
+    const spent = i >= left;
+    // Animate only the pip that just went out, not every spent one.
+    if (spent && !pip.classList.contains('is-spent')) {
+      pip.classList.add('is-spending');
+      setTimeout(() => pip.classList.remove('is-spending'), 520);
+    }
+    pip.classList.toggle('is-spent', spent);
+  });
+  host.setAttribute('aria-label', `${left} of ${total} re-rolls remaining`);
+}
+
+export function setStatus(html) {
+  el('status').innerHTML = html || '';
+}
+
+export function setPuzzleNumber(n) {
+  el('puzzle-no').textContent = `#${n}`;
 }
 
 /* ------------------------------------------------------------------ *

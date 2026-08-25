@@ -5,31 +5,25 @@
 
 import { describeRarity } from './ranks.js';
 
-/** Text version — Discord renders the ``` block as a monospace card. */
-export function shareText(result, rank, percentile, { mode = 'endless', day = null } = {}) {
+/** Emoji square per distance, so the grid reads at a glance. */
+const DISTANCE_SQUARES = ['🟩', '🟨', '🟨', '🟧', '🟥', '⬛'];
+
+/**
+ * Text version. Deliberately shows *distances*, never the digits — posting your
+ * result must not hand anyone else the answers for a target they're still
+ * playing.
+ */
+export function shareText(result, rank, percentile, { puzzle = null } = {}) {
   const rarity = describeRarity(percentile);
-  const spaced = result.display.split('').join(' ');
-  const header = mode === 'daily' ? `RNGDLE Daily ${day}` : 'RNGDLE Unlimited';
+  const grid = result.distances.map((d) => DISTANCE_SQUARES[d]).join('');
+  const header = puzzle ? `Gussle #${puzzle}` : 'Gussle';
 
-  const lines = [
-    `**${header}** — rank **${rank.label}**`,
-    '```',
-    spaced,
-    '',
-    `Score    ${result.total.toLocaleString()}`,
-    `Rank     ${rank.label} (${rank.name})`,
-    `Rarity   ${rarity.text}`,
-    '```',
-  ];
-
-  const top = result.factors
-    .slice()
-    .sort((a, b) => b.points - a.points)
-    .slice(0, 3)
-    .map((f) => `${f.name} +${f.points.toLocaleString()}`);
-  if (top.length) lines.push(top.join(' · '));
-
-  return lines.join('\n');
+  return [
+    `${header} — ${rank.label}`,
+    grid,
+    `${result.bullseyes}/9 exact · distance ${result.totalDistance} · ${result.total.toLocaleString()} pts`,
+    rarity.text,
+  ].join('\n');
 }
 
 /* ------------------------------------------------------------------ *
@@ -70,21 +64,19 @@ function fitText(ctx, text, maxWidth, { weight, sizes, family }) {
 /**
  * Draws a share card. Returns a canvas so callers can choose PNG or blob.
  */
-export function renderCard(result, rank, percentile, { mode = 'endless', day = null, player = null } = {}) {
+export function renderCard(result, rank, percentile, { day = null, puzzle = null, player = null } = {}) {
   const canvas = document.createElement('canvas');
   canvas.width = W;
   canvas.height = H;
   const ctx = canvas.getContext('2d');
 
-  // Background
   const bg = ctx.createLinearGradient(0, 0, W, H);
   bg.addColorStop(0, '#0d0d1c');
   bg.addColorStop(1, '#07070f');
   ctx.fillStyle = bg;
   ctx.fillRect(0, 0, W, H);
 
-  // Rank-coloured glow
-  const glow = ctx.createRadialGradient(W / 2, 210, 20, W / 2, 210, 460);
+  const glow = ctx.createRadialGradient(W / 2, 250, 20, W / 2, 250, 480);
   glow.addColorStop(0, `${rank.color}44`);
   glow.addColorStop(1, 'transparent');
   ctx.fillStyle = glow;
@@ -93,111 +85,115 @@ export function renderCard(result, rank, percentile, { mode = 'endless', day = n
   const sans = 'system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
   const mono = 'ui-monospace, Menlo, Consolas, monospace';
 
-  // Title
   ctx.fillStyle = '#8b90a8';
   ctx.font = `600 22px ${sans}`;
   ctx.textAlign = 'left';
   ctx.letterSpacing = '4px';
-  ctx.fillText(mode === 'daily' ? `RNGDLE DAILY · ${day}` : 'RNGDLE UNLIMITED', 60, 74);
+  ctx.fillText(puzzle ? `GUSSLE #${puzzle}` : 'GUSSLE', 60, 66);
   ctx.letterSpacing = '0px';
 
   if (player) {
     ctx.textAlign = 'right';
     ctx.fillStyle = '#6b7085';
     ctx.font = `500 20px ${sans}`;
-    ctx.fillText(player, W - 60, 74);
+    ctx.fillText(player, W - 60, 66);
     ctx.textAlign = 'left';
   }
 
-  // Digit tiles
-  const digits = result.display.split('');
-  const tileW = 106;
-  const tileH = 132;
-  const gap = 12;
+  /* Target row, then your row, then the distance chips — the same vertical
+     story the game itself tells. */
+  const digits = result.rolled;
+  const tileW = 96;
+  const gap = 11;
   const totalW = digits.length * tileW + (digits.length - 1) * gap;
-  let x = (W - totalW) / 2;
-  const y = 120;
+  const x0 = (W - totalW) / 2;
 
-  for (const digit of digits) {
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#8b90a8';
+  ctx.font = `700 15px ${sans}`;
+  ctx.letterSpacing = '3px';
+  ctx.fillText('TARGET', x0 + 34, 108);
+  ctx.letterSpacing = '0px';
+
+  ctx.textBaseline = 'middle';
+  for (let i = 0; i < digits.length; i++) {
+    const x = x0 + i * (tileW + gap);
+
+    ctx.fillStyle = '#ffc857';
+    ctx.globalAlpha = 0.85;
+    ctx.font = `750 40px ${mono}`;
+    ctx.fillText(String(result.target[i]), x + tileW / 2, 140);
+    ctx.globalAlpha = 1;
+
     ctx.fillStyle = '#14142a';
-    roundRect(ctx, x, y, tileW, tileH, 14);
+    roundRect(ctx, x, 170, tileW, 118, 14);
     ctx.fill();
-    ctx.strokeStyle = 'rgba(255,255,255,0.08)';
-    ctx.lineWidth = 2;
+    ctx.strokeStyle = result.distances[i] === 0 ? '#4ade80' : 'rgba(255,255,255,0.08)';
+    ctx.lineWidth = result.distances[i] === 0 ? 3 : 2;
     ctx.stroke();
 
     ctx.fillStyle = '#f4f6ff';
-    ctx.font = `700 76px ${mono}`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(digit, x + tileW / 2, y + tileH / 2 + 3);
-    x += tileW + gap;
+    ctx.font = `700 66px ${mono}`;
+    ctx.fillText(String(digits[i]), x + tileW / 2, 231);
+
+    const d = result.distances[i];
+    const chip = ['#4ade80', '#a7f3d0', '#fde68a', '#fdba74', '#fca5a5', '#fda4af'][d];
+    ctx.fillStyle = chip;
+    ctx.font = `750 20px ${mono}`;
+    ctx.fillText(d === 0 ? '✓' : `+${d}`, x + tileW / 2, 316);
   }
   ctx.textBaseline = 'alphabetic';
+  ctx.textAlign = 'left';
 
-  // Rank badge
-  const badge = 150;
+  const badge = 138;
   const bx = 60;
-  const by = 320;
+  const by = 366;
   ctx.strokeStyle = rank.color;
   ctx.lineWidth = 4;
-  roundRect(ctx, bx, by, badge, badge, 26);
+  roundRect(ctx, bx, by, badge, badge, 24);
   ctx.stroke();
   ctx.fillStyle = `${rank.color}22`;
   ctx.fill();
 
   ctx.fillStyle = rank.color;
   ctx.textAlign = 'center';
-  const labelSize = rank.label.length >= 5 ? 40 : rank.label.length === 2 ? 62 : 76;
+  const labelSize = rank.label.length >= 6 ? 30 : rank.label.length >= 5 ? 36 : rank.label.length === 2 ? 56 : 70;
   ctx.font = `900 ${labelSize}px ${sans}`;
   ctx.fillText(rank.label, bx + badge / 2, by + badge / 2 + labelSize / 3);
 
-  // Score and rarity
   ctx.textAlign = 'left';
   ctx.fillStyle = '#ffffff';
-  const scoreX = bx + badge + 44;
-  const scoreText = fitText(ctx, result.total.toLocaleString(), W - scoreX - 130, {
+  const scoreX = bx + badge + 40;
+  const scoreText = fitText(ctx, result.total.toLocaleString(), W - scoreX - 60, {
     weight: 800,
-    sizes: [96, 84, 72, 62],
+    sizes: [84, 74, 64, 56],
     family: mono,
   });
-  ctx.fillText(scoreText, scoreX, by + 84);
+  ctx.fillText(scoreText, scoreX, by + 74);
 
   ctx.fillStyle = rank.color;
-  const rarityX = bx + badge + 46;
-  const rarityText = fitText(ctx, `${rank.name} — ${describeRarity(percentile).text}`, W - rarityX - 60, {
+  const rarityText = fitText(ctx, `${rank.name} — ${describeRarity(percentile).text}`, W - scoreX - 60, {
     weight: 700,
-    sizes: [30, 27, 24, 21],
+    sizes: [27, 24, 21],
     family: sans,
   });
-  ctx.fillText(rarityText, rarityX, by + 130);
+  ctx.fillText(rarityText, scoreX + 2, by + 112);
 
-  // Top factors — drop the least valuable ones until the line fits the card.
-  const ranked = result.factors.slice().sort((a, b) => b.points - a.points);
-  const factorsX = bx + 2;
-  const factorsMax = W - factorsX - 60;
   ctx.fillStyle = '#8b90a8';
+  ctx.font = `500 22px ${sans}`;
+  const spent = result.rerollsLeft;
+  ctx.fillText(
+    `${result.bullseyes}/9 exact   ·   total distance ${result.totalDistance}   ·   ` +
+      `${spent} re-roll${spent === 1 ? '' : 's'} unspent`,
+    bx + 2,
+    by + badge + 44,
+  );
 
-  let line = '';
-  for (let count = Math.min(3, ranked.length); count >= 1; count--) {
-    const candidate = ranked
-      .slice(0, count)
-      .map((f) => `${f.name} +${f.points.toLocaleString()}`)
-      .join('   ·   ');
-    ctx.font = `500 24px ${sans}`;
-    if (ctx.measureText(candidate).width <= factorsMax || count === 1) {
-      line = fitText(ctx, candidate, factorsMax, { weight: 500, sizes: [24, 22, 20], family: sans });
-      break;
-    }
-  }
-  if (line) ctx.fillText(line, factorsX, by + badge + 62);
-
-  // Multiplier chip
-  if (result.multiplier > 1) {
-    ctx.fillStyle = '#c084fc';
-    ctx.font = `700 26px ${mono}`;
+  if (day) {
     ctx.textAlign = 'right';
-    ctx.fillText(`×${result.multiplier}`, W - 60, by + 84);
+    ctx.fillStyle = '#4b4f63';
+    ctx.font = `500 18px ${sans}`;
+    ctx.fillText(day, W - 60, by + badge + 44);
   }
 
   return canvas;
@@ -212,7 +208,7 @@ export function cardBlob(canvas) {
  * browser won't allow image clipboard writes (Firefox, Safari in some modes).
  * @returns {Promise<'copied'|'downloaded'>}
  */
-export async function shareCard(canvas, filename = 'rngdle.png') {
+export async function shareCard(canvas, filename = 'gussle.png') {
   const blob = await cardBlob(canvas);
 
   if (navigator.clipboard?.write && typeof ClipboardItem !== 'undefined') {

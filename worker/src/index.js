@@ -1,42 +1,38 @@
 /**
- * Optional shared-leaderboard backend for RNGDLE Unlimited.
+ * Optional shared-leaderboard backend for Gussle.
  *
- * Cloudflare Worker + KV. Deploy it only if you want a global leaderboard —
- * the game runs perfectly well on GitHub Pages without it, falling back to an
- * on-device board.
+ * Cloudflare Worker + KV. Deploy it only if you want a shared board — the game
+ * runs perfectly well on GitHub Pages without it, falling back to an on-device
+ * board.
  *
  * Routes:
- *   GET  /leaderboard?scope=all|daily&day=YYYY-MM-DD&limit=100   public, cached
+ *   GET  /leaderboard?scope=daily|all&day=YYYY-MM-DD&limit=100   public, cached
  *   POST /scores                                                 Google ID token
  *
  * Trust model — please read before deploying:
  *
- *   Daily mode is fully verified. The roll is a pure function of (UTC date,
- *   Google account ID), so the Worker recomputes it and ignores whatever digits
- *   the client sent. A daily submission cannot claim a roll the player didn't
- *   get, and cannot be rerolled.
- *
- *   Identity is verified server-side: every Google ID token has its RS256
+ *   Identity is verified properly. Every Google ID token has its RS256
  *   signature checked against Google's published keys, with issuer, audience
- *   and expiry all enforced. GOOGLE_CLIENT_ID must be set or every sign-in is
+ *   and expiry enforced. GOOGLE_CLIENT_ID must be set or every sign-in is
  *   rejected — without it a token minted for any other site would pass.
  *
- *   Endless mode is not verified, and cannot be on a static front end. The roll happens
- *   in the browser. What the Worker enforces is that a submitted score is
- *   arithmetically consistent with its digits: it recomputes the base score
- *   with the same engine the client uses, checks the cosmic multiplier against
- *   the real weight table, and bounds the rest. That stops "score: 99999999"
- *   outright; it cannot stop someone claiming they rolled 123456789. If that
- *   matters to you, prefer the Daily board — or move roll generation here.
+ *   The *score* is recomputed here from the submitted digits and the day's
+ *   target, which the Worker derives itself. So a score can never disagree with
+ *   the digits it claims, and the target cannot be fudged.
+ *
+ *   What the Worker cannot check is whether those digits were honestly rolled.
+ *   The rolls happen in the browser, so a determined player can submit nine
+ *   digits they simply chose. Closing that would mean the Worker issuing each
+ *   roll on request — perfectly doable on top of this, and the natural next
+ *   step if the board ever matters enough to be worth cheating at.
  */
 
-import { scoreRoll, COSMIC_TABLE, ROLL_LENGTH } from '../../js/scoring.js';
+import { scoreRound, ROLL_LENGTH, REROLLS_PER_DAY } from '../../js/scoring.js';
 import { percentileOf, rankFor, RANKS } from '../../js/ranks.js';
-import { dailyRoll, dateKey } from '../../js/daily.js';
+import { dailyTarget, dateKey } from '../../js/daily.js';
 
 const BOARD_KEY = 'board:v1';
 const BOARD_SIZE = 100;
-const MAX_EXTRA_MULTIPLIER = 4; // streak (<=2) x time (<=2)
 const RATE_LIMIT = 40; // submissions per minute per user
 const DAILY_TTL = 60 * 60 * 24 * 40; // keep daily boards for ~40 days
 
@@ -81,14 +77,14 @@ function decodeSegment(segment) {
 }
 
 async function googleKeys(env) {
-  const cached = await env.RNGDLE.get('jwks:google', 'json');
+  const cached = await env.GUSSLE.get('jwks:google', 'json');
   if (cached) return cached;
 
   const res = await fetch(GOOGLE_JWKS);
   if (!res.ok) throw new Error('could not fetch Google signing keys');
   const jwks = await res.json();
   // Google rotates these; an hour is well inside their cache headers.
-  await env.RNGDLE.put('jwks:google', JSON.stringify(jwks), { expirationTtl: 3600 });
+  await env.GUSSLE.put('jwks:google', JSON.stringify(jwks), { expirationTtl: 3600 });
   return jwks;
 }
 
@@ -151,14 +147,14 @@ async function verifyGoogleToken(jwt, env) {
 /** Resolves a bearer token to a user. Cached briefly, keyed by the token. */
 async function identify(token, env) {
   const cacheKey = `token:${await sha256(token)}`;
-  const cached = await env.RNGDLE.get(cacheKey, 'json');
+  const cached = await env.GUSSLE.get(cacheKey, 'json');
   if (cached) return cached;
 
   const user = await verifyGoogleToken(token, env);
   if (!user) return null;
 
   // Never cache past the token's own lifetime.
-  await env.RNGDLE.put(cacheKey, JSON.stringify(user), { expirationTtl: 300 });
+  await env.GUSSLE.put(cacheKey, JSON.stringify(user), { expirationTtl: 300 });
   return user;
 }
 
@@ -169,8 +165,8 @@ const avatarUrl = (user) => user.picture || null;
 
 async function rateLimited(userId, env) {
   const key = `rate:${userId}:${Math.floor(Date.now() / 60000)}`;
-  const count = Number((await env.RNGDLE.get(key)) || 0) + 1;
-  await env.RNGDLE.put(key, String(count), { expirationTtl: 120 });
+  const count = Number((await env.GUSSLE.get(key)) || 0) + 1;
+  await env.GUSSLE.put(key, String(count), { expirationTtl: 120 });
   return count > RATE_LIMIT;
 }
 
@@ -179,41 +175,35 @@ async function rateLimited(userId, env) {
  * ------------------------------------------------------------------ */
 
 /**
- * Daily: the roll is recomputed here from (day, user id). Nothing the client
- * sent about the roll is trusted or even read.
+ * Recomputes the day's score from the submitted digits.
+ *
+ * The target is derived here rather than trusted, so the only thing taken on
+ * faith is the digits themselves.
  */
-function scoreDaily(user, day) {
-  if (day !== dateKey()) throw new Error('daily submissions must be for the current UTC day');
-  const { digits, cosmic } = dailyRoll(day, playerKey(user));
-  const result = scoreRoll(digits, cosmic);
-  return {
-    score: result.total,
-    digits: result.display,
-    multiplier: result.multiplier,
-    cosmic: cosmic.value,
-  };
-}
+function scoreSubmission(payload) {
+  const { digits, rerollsLeft, day } = payload;
 
-/** Endless: recompute the base score from the submitted digits. */
-function scoreEndless(payload) {
-  const { digits, cosmic, multipliers } = payload;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(day))) throw new Error('bad day');
+  if (day !== dateKey()) throw new Error('submissions must be for the current UTC day');
 
   if (typeof digits !== 'string' || !new RegExp(`^\\d{${ROLL_LENGTH}}$`).test(digits)) {
     throw new Error(`digits must be ${ROLL_LENGTH} numeric characters`);
   }
-  const cosmicEntry = COSMIC_TABLE.find((c) => c.value === cosmic);
-  if (!cosmicEntry) throw new Error('unknown cosmic multiplier');
 
-  const total = Number(multipliers);
-  if (!Number.isFinite(total) || total < cosmicEntry.value) throw new Error('invalid multiplier');
-  if (total / cosmicEntry.value > MAX_EXTRA_MULTIPLIER + 1e-9) throw new Error('multiplier out of range');
+  const left = Number(rerollsLeft);
+  if (!Number.isInteger(left) || left < 0 || left > REROLLS_PER_DAY) {
+    throw new Error('rerollsLeft out of range');
+  }
 
-  const result = scoreRoll([...digits].map(Number), cosmicEntry);
+  const target = dailyTarget(day);
+  const result = scoreRound(target, [...digits].map(Number), { rerollsLeft: left });
   return {
-    score: Math.round(result.base * total),
+    score: result.total,
     digits,
-    multiplier: total,
-    cosmic: cosmicEntry.value,
+    bullseyes: result.bullseyes,
+    totalDistance: result.totalDistance,
+    rerollsLeft: left,
+    day,
   };
 }
 
@@ -239,12 +229,11 @@ async function announce(entry, env) {
       {
         title: `${entry.rank} — ${rank.name}`,
         description:
-          `**${entry.name}** rolled \`${entry.digits.split('').join(' ')}\`\n` +
-          `**${entry.score.toLocaleString()}** points` +
-          (entry.multipliers > 1 ? ` (×${entry.multipliers})` : ''),
+          `**${entry.name}** finished Gussle with **${entry.bullseyes}/9** exact\n` +
+          `**${entry.score.toLocaleString()}** points · total distance ${entry.totalDistance}`,
         color: parseInt(rank.color.replace('#', ''), 16),
         thumbnail: { url: entry.avatar },
-        footer: { text: entry.mode === 'daily' ? `Daily Challenge · ${entry.day}` : 'Endless' },
+        footer: { text: entry.day },
         timestamp: new Date(entry.at).toISOString(),
       },
     ],
@@ -267,12 +256,12 @@ async function announce(entry, env) {
  * ------------------------------------------------------------------ */
 
 async function readBoard(env, key) {
-  return (await env.RNGDLE.get(key, 'json')) || [];
+  return (await env.GUSSLE.get(key, 'json')) || [];
 }
 
 async function writeBoard(env, key, entries, ttl) {
   const options = ttl ? { expirationTtl: ttl } : undefined;
-  await env.RNGDLE.put(key, JSON.stringify(entries.slice(0, BOARD_SIZE)), options);
+  await env.GUSSLE.put(key, JSON.stringify(entries.slice(0, BOARD_SIZE)), options);
 }
 
 /* ------------------------------------------------------------------ */
@@ -321,24 +310,11 @@ export default {
         return json({ error: 'bad JSON' }, 400, env);
       }
 
-      const isDaily = payload.mode === 'daily';
-      const day = isDaily ? payload.day || dateKey() : undefined;
-
       let verified;
       try {
-        verified = isDaily ? scoreDaily(user, day) : scoreEndless(payload);
+        verified = scoreSubmission(payload);
       } catch (err) {
         return json({ error: err.message }, 400, env);
-      }
-
-      const key = isDaily ? dailyBoardKey(day) : BOARD_KEY;
-      const board = await readBoard(env, key);
-      const existing = board.find((e) => e.playerId === identityKey);
-
-      // The daily is one roll per player: first submission wins, and since we
-      // recompute it, a resubmission is identical anyway.
-      if (existing && (isDaily || existing.score >= verified.score)) {
-        return json({ improved: false, best: existing.score }, 200, env);
       }
 
       const entry = {
@@ -347,18 +323,34 @@ export default {
         avatar: avatarUrl(user),
         score: verified.score,
         digits: verified.digits,
-        cosmic: verified.cosmic,
-        multipliers: verified.multiplier,
+        bullseyes: verified.bullseyes,
+        totalDistance: verified.totalDistance,
+        rerollsLeft: verified.rerollsLeft,
         rank: rankFor(percentileOf(verified.score)).label,
-        mode: isDaily ? 'daily' : 'endless',
-        day,
+        day: verified.day,
         at: Date.now(),
       };
 
-      const next = board.filter((e) => e.playerId !== identityKey);
-      next.push(entry);
-      next.sort((a, b) => b.score - a.score);
-      await writeBoard(env, key, next, isDaily ? DAILY_TTL : undefined);
+      // Today's board: one row per player, replaced on resubmission.
+      const todayKey = dailyBoardKey(verified.day);
+      const today = await readBoard(env, todayKey);
+      const nextToday = today.filter((e) => e.playerId !== identityKey);
+      nextToday.push(entry);
+      nextToday.sort((a, b) => b.score - a.score);
+      await writeBoard(env, todayKey, nextToday, DAILY_TTL);
+
+      // All-time board: each player's single best day.
+      const best = await readBoard(env, BOARD_KEY);
+      const previous = best.find((e) => e.playerId === identityKey);
+      let improved = true;
+      if (previous && previous.score >= verified.score) {
+        improved = false;
+      } else {
+        const nextBest = best.filter((e) => e.playerId !== identityKey);
+        nextBest.push(entry);
+        nextBest.sort((a, b) => b.score - a.score);
+        await writeBoard(env, BOARD_KEY, nextBest, undefined);
+      }
 
       // Fire-and-forget so the player isn't waiting on Discord.
       ctx.waitUntil(announce(entry, env));

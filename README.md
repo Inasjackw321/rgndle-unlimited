@@ -1,57 +1,45 @@
-# RNGDLE Unlimited
+# Gussle
 
-Roll a nine-digit number. Fifteen factors judge it. Find out how rare your luck really was.
+One nine-digit target a day, the same for everyone. Roll the digits one at a time and try to land
+close. Three re-rolls. Spend them wisely.
 
-A static web game: slot-machine reels, a rarity-weighted scoring engine, a verifiable Daily Challenge,
-62 achievements, shareable cards, Google sign-in and leaderboards — all running on GitHub Pages with
-no build step and no server.
+A static web game — no build step, no server, running on GitHub Pages.
 
 ---
 
-## How the score works
+## How it plays
 
-Each roll produces **nine digits** and one **cosmic multiplier**. The digits are then examined by a
-panel of factors, each paying out according to how unlikely it is.
+1. Everyone gets the **same nine-digit target** today.
+2. Roll the digits **one at a time**, left to right.
+3. After each roll, **keep it** or spend one of your **three re-rolls** on that digit.
+4. The closer each digit lands to its target, the more it scores.
 
-### Improbability — the rarity floor
+Re-rolls don't come back until tomorrow, and an unspent one is worth points at the end. That's the
+whole game: a mediocre digit on lane one is usually worth keeping, while the same digit on lane nine
+is worth burning a re-roll on. Judging the middle is the interesting part.
 
-Every roll scores this one. It takes the roll's *shape* — how many of each digit you got, ignoring
-which digits and in what order — and computes the **exact probability of that shape**:
+### Digits wrap
 
-```
-P(shape) = (ways to assign digits to parts) x (ways to arrange them) / 10^9
-```
+Distance is measured the short way round, so **9 and 0 are one apart** and the worst you can ever be
+is 5.
 
-That ranges from `0.229` (two pairs and five singles — the most common outcome) down to `1e-8` (all
-nine digits identical). The payout is proportional to `1 / sqrt(P)`, so a shape twice as rare pays
-about 1.41x as much. This is what keeps the low end of the distribution smooth: without it, half of
-all players would score one of about four possible values.
+This isn't decoration. Under plain `|a − b|` the expected distance depends on the target digit — 4.5
+for a 0 or 9, but 2.5 for a 4 or 5 — so a day whose target was `000000000` would be nearly twice as
+hard as one of `555555555`, and days would stop being comparable. Wrapping makes every target digit
+identical: expected distance 2.5, worst case 5, always. `tools/verify.mjs` asserts this rather than
+taking it on trust, and separately checks that four wildly different targets produce the same score
+distribution.
 
-### Arrangement factors
+### Scoring
 
-Improbability is deliberately blind to digit *order*, so the rest of the panel rewards it: identical
-runs, ascending and descending straights, palindromes, alternating patterns, arithmetic sequences,
-repeated halves, and trailing zeros. Each scales exponentially in the length of the pattern.
+| Distance | 0 | 1 | 2 | 3 | 4 | 5 |
+| --- | --- | --- | --- | --- | --- | --- |
+| Points | 1000 | 400 | 150 | 50 | 15 | 0 |
 
-### Alphabet and ordering
-
-Which digits you drew, and in what order: rolls made only of binary digits, only prime digits, all
-even or all odd; rolls that never decrease or never increase; `AABBCCDD` stutters; and straights that
-run through the 9-to-0 seam.
-
-### Number theory and culture
-
-The nine digits are also read as a single integer. Primes, perfect squares, perfect cubes, powers of
-two, Fibonacci numbers and triangular numbers all pay out, scaled by how thin on the ground they are —
-there are only 44 Fibonacci numbers below a billion. The digits are also scanned for a short list of
-numbers people care about for entirely unmathematical reasons.
-
-### Multipliers
-
-The **cosmic multiplier** is a second, independent roll across thirteen tiers, from a 50%-likely 1x up
-to a 1-in-20,000 **100x**, heavily weighted toward the bottom.
-A **hot streak** multiplier builds while each roll beats the last, and a small **time bonus** applies
-at a few silly clock times.
+On top of the per-digit total: a **bullseye combo** that scales hard with how many digits landed
+exactly, a bonus for **consecutive** bullseyes, **tight grouping** and **no bad digits** bonuses for
+overall control, and **250 per unspent re-roll**. Landing every single digit as far from the target as
+possible is exactly as unlikely as a perfect day, and pays accordingly.
 
 ## Ranks are real numbers, not vibes
 
@@ -68,224 +56,179 @@ Fifteen tiers, defined by **percentile** rather than hand-picked score threshold
 | A+ | 93–96.5% | ETERNAL | top 0.005% |
 | | | Ω | top 0.001% |
 
-`tools/gen-percentiles.mjs` runs the scoring engine over **2,000,000 simulated rolls** and emits a
-quantile table (`js/percentiles.js`) — dense through the body of the distribution, logarithmic in the
-upper tail. When the game says *top 0.004%*, that is a measured position in a real distribution.
+The reference distribution is **2,000,000 days played by a solver that always makes the correct
+re-roll decision**, so a percentile compares you against perfect play. Beating it means you got
+luckier than optimal, not that you out-thought it.
 
-Two consequences worth knowing:
+## The solver
 
-- **Rank bands are self-calibrating.** Retuning the scoring engine doesn't require re-picking
-  thresholds — just regenerate the table.
-- **Nominal band widths aren't exactly attainable.** The score distribution is discrete, so a
-  percentile boundary landing inside an atom of identical scores cannot split it. `tools/verify.mjs`
-  therefore asserts the property that actually matters — that `percentileOf(s)` equals the true
-  fraction of rolls scoring below `s` — and reports band shares as information only. (They currently
-  land within a few percent of nominal across all fifteen tiers.)
+"Should I burn a re-roll on this?" has a correct answer, so `js/strategy.js` computes it rather than
+guessing. The game is a small Markov decision process:
 
-## Daily Challenge
-
-One roll per player per UTC day, derived deterministically from `(date, playerId)`:
-
-```js
-dailyRoll(day, playerId)   // -> the same nine digits, every time
+```
+state  = (digits left, re-rolls left, bullseyes so far,
+          total distance so far, worst distance so far)
+action = keep, or spend a re-roll
 ```
 
-Two things follow from that:
+110,400 states, solved exactly in about 30ms. The advice it produces is nicely intuitive and was not
+hand-tuned — on the first lane with all three re-rolls it only re-rolls a distance of 4 or 5, but on
+the last lane with a re-roll about to expire it re-rolls a 3.
 
-- **You cannot reroll it.** Refreshing, clearing storage or opening a different browser all reproduce
-  the same digits. The button locks to `PLAYED` with a countdown to the next one.
-- **It is the one mode a server can fully verify.** The Worker recomputes your roll from your
-  authenticated Google account ID and the date, and ignores whatever digits the client sent. A Daily
-  submission cannot claim a roll you didn't get.
-
-The derivation is public, so you can compute future days in advance. That's harmless — knowing
-tomorrow's roll doesn't let you change it.
-
-The Daily deliberately has no streak or time multipliers: it's a single fixed roll, so session
-multipliers would make the board depend on how much you'd played beforehand.
-
-Fairness was checked against the crypto-random baseline over 240,000 derived rolls — digit
-frequencies land within ±0.5% of uniform, and the score median and 99th percentile match the endless
-mode exactly.
-
-## Achievements
-
-62 of them, evaluated after every roll and stored per account: rank milestones across all fifteen
-tiers, score milestones, pattern finds, the digit-alphabet and ordering rarities, number-theory
-curiosities, the cultural numbers, multiplier and streak feats, and Daily streaks. Eleven are secret
-and stay masked until earned. Unlocks arrive as toasts.
-
-Every one is reachable — a test sweeps millions of simulated rolls and reports any achievement that
-never fires, which catches both unsatisfiable predicates and factor-name typos.
+One documented simplification: the DP doesn't look ahead to the consecutive-bullseye bonus, which
+would need the current run length in the state for a bonus that is rare and small. Runs are treated as
+a windfall. `tools/gen-percentiles.mjs` cross-checks the simulation against the solved expectation and
+asserts the simulated mean lands *slightly above* it — below would mean the policy isn't being
+followed, far above would mean the run bonus is mis-scaled.
 
 ## Sharing
 
-- **Copy image** renders a 1200×630 card on a canvas — digits, rank badge, score, rarity and top
-  factors — and puts the PNG on your clipboard, falling back to a download where browsers don't allow
-  image clipboard writes.
-- **Copy for Discord** produces a message with a fenced block, which Discord renders as a monospace
-  card.
+**Copy result** produces a spoiler-free grid — coloured squares for each distance, never the digits,
+so posting your result can't hand the answers to someone still playing:
+
+```
+Gussle #237 — ETERNAL
+🟩🟩🟨🟩🟩🟩🟩🟥🟩
+7/9 exact · distance 5 · 73,492 pts
+top 0.00396% · 1 in 25,279
+```
+
+**Copy image** renders a 1200×630 card showing the target row, your row and the distance chips.
 
 ## Running it locally
 
 ```bash
-npm start          # http://localhost:8080
+npm start             # http://localhost:8080
+npm run percentiles   # regenerate js/percentiles.js (required after changing scoring or strategy)
+npm run verify        # confirm the table and the fairness claims still hold
 ```
 
 Plain ES modules, so any static file server works.
-
-```bash
-npm run percentiles   # regenerate js/percentiles.js (required after editing js/scoring.js)
-npm run verify        # confirm the table still calibrates the scorer
-```
 
 ## Deploying to GitHub Pages
 
 1. Push to `main`.
 2. **Settings → Pages → Build and deployment → Source: GitHub Actions.**
 
-`.github/workflows/deploy.yml` verifies the percentile table and publishes the repository root. The
-verify step is the useful part: editing `js/scoring.js` without regenerating the table fails CI
-rather than silently shipping miscalibrated ranks.
-
-There is no build step. `.nojekyll` is present so paths beginning with `_` are served correctly.
+`.github/workflows/deploy.yml` runs the verifier before publishing, so changing the scoring engine
+without regenerating the table fails CI rather than silently shipping miscalibrated ranks.
 
 ## Signing in
 
 Sign-in uses **Google Identity Services**, which hands the browser a signed JWT ID token directly. No
 token exchange, no client secret, no server — which is what lets it work on a static host.
 
-Every "Sign in with…" button on the web requires the site owner to register an OAuth client first;
-there is no provider that skips this. Google's is the more forgiving kind, because it authorises an
-**origin** rather than an exact redirect path.
-
-### Setup
-
-This deployment ships a client ID in `js/config.js`, so sign-in is live for every visitor. For your own
-fork:
+This deployment ships a client ID in `js/config.js`, so sign-in is live for every visitor. For your
+own fork:
 
 1. In [Google Cloud → Credentials](https://console.cloud.google.com/apis/credentials), create an
    **OAuth client ID** of type **Web application**.
-2. Under **Authorised JavaScript origins**, add your origin — e.g. `https://<you>.github.io`. Note that
-   is the *origin* only: no path, no trailing slash, and no redirect URI to add.
-3. Put the client ID (`…apps.googleusercontent.com`) into `js/config.js` as `googleClientId`, and into
-   `worker/wrangler.toml` as `GOOGLE_CLIENT_ID` if you deploy the leaderboard. The two must match — the
-   Worker checks that every token was issued for exactly this client.
+2. Under **Authorised JavaScript origins**, add your origin — e.g. `https://<you>.github.io`. That is
+   the *origin* only: no path, no trailing slash, and no redirect URI to add.
+3. Put the client ID into `js/config.js` as `googleClientId`, and into `worker/wrangler.toml` as
+   `GOOGLE_CLIENT_ID` if you deploy the leaderboard. The two must match — the Worker checks that every
+   token was issued for exactly this client.
 
-You can also enter it in-game via **Set up sign-in** (or the help dialog once configured), which stores
-it for that browser only — handy for testing without a redeploy. A per-browser value overrides
-`config.js`; **Clear** removes it and falls back.
+You can also enter it in-game via **Set up sign-in**, which stores it for that browser only. A
+per-browser value overrides `config.js`; **Clear** removes it and falls back.
 
-A client ID is public — it ships to the browser either way. The thing you must never commit is the
-client *secret*, which this flow never uses.
+Google ID tokens expire in about an hour, so identity and token lifetimes are tracked separately: your
+profile stays signed in for 30 days locally, while the leaderboard silently renews the token before
+submitting a score.
 
 If Google Identity Services can't be reached, the sign-in slot says so and the game stays fully
 playable as a guest.
 
-### Session handling
-
-Google ID tokens expire in about an hour, so **identity and token lifetimes are tracked separately**.
-Your profile stays signed in for 30 days locally — re-prompting hourly just to look at your own roll
-history would be obnoxious — while the leaderboard silently renews the token before submitting a
-score, since that's the only place a fresh token actually matters. A `401` triggers one silent re-auth
-and a retry.
-
 ## What signing in gets you
 
-Roll history, achievements and the Daily streak are stored **per identity**, namespaced by player key
-(`rngdle_history::google:1098765…`). The `google:` prefix is deliberate — it keeps the namespace open
-so a second provider could never collide with existing identities. Signing in therefore swaps the whole profile rather than just
-changing the name on the leaderboard, and two people sharing a browser never see each other's
-progress.
+Results, achievements, streak and **today's in-progress game** are stored per identity, namespaced by
+player key (`gussle_history::google:1098765…`). Signing in swaps the whole profile rather than just
+changing the name on the board, so two people sharing a browser never see each other's progress — or
+each other's half-finished day.
 
-Guest progress is **moved** onto your account the first time you sign in, so signing in never looks
-like it wiped everything. It is a move rather than a copy on purpose: if the guest profile survived,
-the next person to sign in on a shared browser would inherit the same session and start with someone
-else's history. An account that already has its own progress keeps it — nothing is merged over the
-top.
+Guest progress is **moved** onto your account the first time you sign in. It's a move rather than a
+copy on purpose: if the guest profile survived, the next person to sign in on a shared browser would
+inherit the same session.
 
-Storage is per-browser. To make a profile follow you between devices it would need to live in the
-Worker; the leaderboard already does, the rest does not.
+## Anti-rewind
+
+Every state transition is written to storage the moment it happens — most importantly the pending
+roll, before you've decided on it. If that only lived in memory, reloading the page after a bad digit
+would hand out a free re-roll, which is exactly what the three-per-day budget exists to prevent. There
+is a browser test for it.
 
 ## Leaderboard
 
-By default the leaderboard lives in `localStorage` — per-device, works offline, no setup.
+By default the boards live in `localStorage` — today's board and your best day ever, per device, no
+setup.
 
-For a **shared** leaderboard, deploy the Cloudflare Worker in `worker/`:
+For **shared** boards, deploy the Cloudflare Worker in `worker/`:
 
 ```bash
 cd worker
-npx wrangler kv namespace create RNGDLE   # paste the id into wrangler.toml
-# REQUIRED — set GOOGLE_CLIENT_ID in wrangler.toml, or tokens minted for any
-# other site would be accepted here.
+npx wrangler kv namespace create GUSSLE   # paste the id into wrangler.toml
+# set GOOGLE_CLIENT_ID in wrangler.toml, or every sign-in is rejected
 npx wrangler deploy
 ```
 
-Then set the endpoint in `js/config.js`:
-
-```js
-leaderboardEndpoint: 'https://rngdle-leaderboard.<your-subdomain>.workers.dev',
-```
-
-The Worker verifies every ID token by checking its RS256 signature against Google's published keys,
-plus issuer, audience and expiry, then rate-limits submissions, and keeps one personal-best row
-per player on the all-time board plus one row per player per day on the Daily board (kept ~40 days).
+Then set the endpoint in `js/config.js` as `leaderboardEndpoint`.
 
 ### Channel announcements
 
-The Worker can post big rolls to a Discord channel. The webhook URL is a **Worker secret**, never
-client config, so nobody can read it out of the page and spam your channel:
+The Worker can post big results to a Discord channel. The webhook URL is a **Worker secret**, never
+client config, so nobody can read it out of the page:
 
 ```bash
-npx wrangler secret put ANNOUNCE_WEBHOOK      # a channel webhook URL
+npx wrangler secret put ANNOUNCE_WEBHOOK
 ```
 
-`ANNOUNCE_MIN_RANK` in `wrangler.toml` sets the threshold (default `SS`). Announcements are fired with
-`ctx.waitUntil`, so a Discord outage never delays or fails a score submission.
+`ANNOUNCE_MIN_RANK` in `wrangler.toml` sets the threshold. Announcements fire with `ctx.waitUntil`, so
+a Discord outage never delays or fails a score submission.
 
 ### Trust model — please read before deploying the Worker
 
-**The Daily board is fully verified.** The roll is a pure function of the UTC date and your Google
-account ID, so the Worker recomputes it and ignores the client's claims entirely. It cannot be faked and
-cannot be rerolled.
+**Identity is verified properly.** Every Google ID token has its RS256 signature checked against
+Google's published keys, with issuer, audience and expiry enforced.
 
-**The all-time board is not, and cannot be on a static front end.** The endless roll happens in the
-browser. What the Worker enforces is that a submitted score is **arithmetically consistent with its
-digits**: it recomputes the base score using the same engine the client uses, checks the cosmic
-multiplier against the real weight table, and bounds the rest. That stops `{"score": 99999999}`
-outright. It cannot stop someone from claiming they rolled `123456789`.
+**The score is recomputed server-side** from the submitted digits and the day's target, which the
+Worker derives itself. A score can never disagree with the digits it claims, and the target can't be
+fudged.
 
-If that matters for your deployment, prefer the Daily board — or move `rollDigits`/`rollCosmic` into
-the Worker and have the client request a roll rather than report one.
+**What the Worker cannot check is whether those digits were honestly rolled.** The rolls happen in the
+browser, so a determined player can submit nine digits they simply chose. Closing that means having
+the Worker issue each roll on request — perfectly doable on top of what's here, and the natural next
+step if the board ever matters enough to be worth cheating at.
 
 ## Layout
 
 ```
 index.html                  markup and DOM contract
 styles.css                  all visuals and animation
-js/scoring.js               the scoring engine — pure, runs in browser and Node alike
+js/scoring.js               distance-based scoring — pure, runs in browser, Worker and Node alike
+js/strategy.js              the solved MDP: optimal re-roll policy and reference play
 js/percentiles.js           GENERATED quantile table
 js/ranks.js                 score -> percentile -> rank
-js/daily.js                 deterministic Daily Challenge (shared with the Worker)
+js/daily.js                 the day's target, countdown, puzzle number
+js/game.js                  one day's state machine, persisted on every transition
+js/reels.js                 the nine lanes and their spin
 js/achievements.js          achievement definitions and unlock state
-js/share.js                 PNG share card and Discord text
-js/reels.js                 slot-machine reel mechanics
+js/share.js                 spoiler-free grid and PNG card
 js/fx.js                    starfield, particle bursts, count-up, screen shake
 js/audio.js                 synthesised sound (no audio files)
 js/auth.js                  sign-in facade and session store
 js/google.js                Google Identity Services, JWT ID tokens
 js/profile.js               per-identity storage and guest adoption
-js/leaderboard.js           local and remote board adapters, both scopes
+js/leaderboard.js           local and remote board adapters
 js/ui.js                    rendering
 js/main.js                  game loop and wiring
-tools/gen-percentiles.mjs   Monte Carlo -> js/percentiles.js
-tools/verify.mjs            calibration check (runs in CI)
+tools/gen-percentiles.mjs   Monte Carlo of optimal play -> js/percentiles.js
+tools/verify.mjs            calibration and fairness checks (runs in CI)
 tools/serve.mjs             local dev server
 worker/                     optional Cloudflare Worker leaderboard
 ```
 
-Accessibility: reels expose their result via `aria-live`, and everything animated is disabled under
-`prefers-reduced-motion`.
+Accessibility: lanes expose their state via `aria-live`, the re-roll budget is announced, and
+everything animated is disabled under `prefers-reduced-motion`.
 
 ## Licence
 

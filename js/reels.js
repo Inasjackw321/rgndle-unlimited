@@ -1,39 +1,66 @@
 /**
- * Slot-machine reels.
+ * The machine: nine lanes, each showing the target digit, a reel, and how far
+ * off you landed.
  *
- * Each reel is a viewport over a tall strip of digit cells. Spinning is a
- * single long CSS transition across many cycles with a hard-deceleration
- * easing curve, which gives the "fast blur, slow settle" feel for free.
- * Reels are staggered so they land left-to-right.
+ * Stacking target directly above result is the whole tutorial — you can see at
+ * a glance what you're aiming at and how close you got, without reading a word.
+ *
+ * Reels spin as a single long CSS transition across many cycles with a
+ * hard-deceleration curve, which gives the "fast blur, slow settle" feel for
+ * free. Only one lane spins at a time now: you roll the digits one by one.
  */
 
 import { ROLL_LENGTH } from './scoring.js';
 
-const CYCLES_BASE = 9;
-const DURATION_BASE = 1100;
-const DURATION_STAGGER = 140;
+const CYCLES = 11;
+const DURATION = 1250;
 const EASING = 'cubic-bezier(0.16, 0.84, 0.24, 1)';
 
 let container = null;
-const reels = [];
+const lanes = [];
 
 function cellHeight() {
   const raw = getComputedStyle(document.documentElement).getPropertyValue('--reel-h');
   return parseFloat(raw) || 84;
 }
 
-export function mountReels(el) {
+const prefersReducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+export function mountLanes(el, target) {
   container = el;
   container.replaceChildren();
-  reels.length = 0;
+  lanes.length = 0;
 
-  const maxCycles = CYCLES_BASE + ROLL_LENGTH - 1;
-  const totalCells = (maxCycles + 2) * 10;
+  const totalCells = (CYCLES + 2) * 10;
+
+  // A label column that is itself a lane, so it lines up with the three rows
+  // automatically instead of being positioned by hand.
+  const labels = document.createElement('div');
+  labels.className = 'lane lane-labels';
+  labels.setAttribute('aria-hidden', 'true');
+  for (const [cls, text] of [
+    ['lane-target', 'TARGET'],
+    ['reel', 'YOU'],
+    ['lane-delta', 'OFF BY'],
+  ]) {
+    const row = document.createElement('div');
+    row.className = `${cls}-label`;
+    row.textContent = text;
+    labels.append(row);
+  }
+  container.append(labels);
 
   for (let i = 0; i < ROLL_LENGTH; i++) {
+    const lane = document.createElement('div');
+    lane.className = 'lane';
+
+    const targetEl = document.createElement('div');
+    targetEl.className = 'lane-target';
+    targetEl.textContent = String(target[i]);
+    targetEl.title = `Target digit ${i + 1}`;
+
     const reel = document.createElement('div');
     reel.className = 'reel';
-
     const strip = document.createElement('div');
     strip.className = 'reel-strip';
     for (let c = 0; c < totalCells; c++) {
@@ -42,103 +69,142 @@ export function mountReels(el) {
       cell.textContent = String(c % 10);
       strip.append(cell);
     }
+    // Until a lane is rolled its strip is parked on some arbitrary digit, which
+    // would read as "you rolled a 0". Cover it.
+    const cover = document.createElement('div');
+    cover.className = 'reel-cover';
+    cover.textContent = '?';
+    reel.append(strip, cover);
 
-    reel.append(strip);
-    container.append(reel);
-    reels.push({ reel, strip, digit: 0 });
+    const delta = document.createElement('div');
+    delta.className = 'lane-delta';
+    delta.textContent = '';
+
+    lane.append(targetEl, reel, delta);
+    container.append(lane);
+    lanes.push({ lane, reel, strip, delta, digit: 0, settled: false });
   }
 
-  setDigits(Array.from({ length: ROLL_LENGTH }, () => Math.floor(Math.random() * 10)));
-  window.addEventListener('resize', () => setDigits(reels.map((r) => r.digit)));
-}
-
-/** Snap to digits with no animation (initial paint, resize, reduced motion). */
-export function setDigits(digits) {
-  const h = cellHeight();
-  digits.forEach((digit, i) => {
-    const r = reels[i];
-    if (!r) return;
-    r.digit = digit;
-    r.strip.style.transition = 'none';
-    r.strip.style.transform = `translateY(${-digit * h}px)`;
+  // Park every reel on a blank-looking position until it is rolled.
+  for (let i = 0; i < ROLL_LENGTH; i++) setDigit(i, 0, { silent: true });
+  window.addEventListener('resize', () => {
+    lanes.forEach((l, i) => setDigit(i, l.digit, { silent: true }));
   });
-  updateLabel(digits);
 }
 
-function updateLabel(digits) {
-  if (container) container.setAttribute('aria-label', `Roll result: ${digits.join(' ')}`);
+export function setTarget(target) {
+  lanes.forEach((l, i) => {
+    l.lane.querySelector('.lane-target').textContent = String(target[i]);
+  });
 }
 
-export function clearHighlights() {
-  for (const { reel } of reels) reel.classList.remove('is-hot');
+/** Places a digit with no animation (restore, resize, reduced motion). */
+export function setDigit(i, digit, { silent = false } = {}) {
+  const lane = lanes[i];
+  if (!lane) return;
+  const h = cellHeight();
+  lane.digit = digit;
+  lane.strip.style.transition = 'none';
+  lane.strip.style.transform = `translateY(${-digit * h}px)`;
+  if (!silent) announce();
 }
 
-/** Highlight the reel positions that contributed to a scoring pattern. */
-export function highlight(indices) {
-  clearHighlights();
-  for (const i of indices) reels[i]?.reel.classList.add('is-hot');
+/** Marks a lane as awaiting its roll, already settled, or the live one. */
+export function setLaneState(i, stateName) {
+  const lane = lanes[i];
+  if (!lane) return;
+  lane.lane.classList.toggle('is-active', stateName === 'active');
+  lane.lane.classList.toggle('is-settled', stateName === 'settled');
+  lane.lane.classList.toggle('is-pending', stateName === 'pending');
+  lane.lane.classList.toggle('is-waiting', stateName === 'waiting');
 }
 
-const prefersReducedMotion = () =>
-  window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+export function setDelta(i, value) {
+  const lane = lanes[i];
+  if (!lane) return;
+  if (value === null || value === undefined) {
+    lane.delta.textContent = '';
+    lane.delta.removeAttribute('data-d');
+    return;
+  }
+  lane.delta.textContent = value === 0 ? '✓' : `+${value}`;
+  lane.delta.dataset.d = String(value);
+}
 
-/**
- * Spins to `digits`. Resolves once the final reel has settled.
- * `onLand(index, digit)` fires as each reel stops.
- */
-export function spin(digits, onLand = () => {}) {
-  clearHighlights();
+function announce() {
+  if (!container) return;
+  const shown = lanes.map((l) => (l.settled ? l.digit : '?')).join(' ');
+  container.setAttribute('aria-label', `Your digits so far: ${shown}`);
+}
+
+export function markSettled(i, settled = true) {
+  const lane = lanes[i];
+  if (!lane) return;
+  lane.settled = settled;
+  // A re-rolled lane goes back to being unknown, so the cover comes back too.
+  if (!settled) lane.lane.classList.remove('is-rolling');
+  announce();
+}
+
+/** Spins one lane to `digit`. Resolves when it settles. */
+export function spinOne(i, digit) {
+  const lane = lanes[i];
+  if (!lane) return Promise.resolve();
 
   if (prefersReducedMotion()) {
-    setDigits(digits);
-    digits.forEach((d, i) => onLand(i, d));
+    lane.lane.classList.add('is-rolling');
+    setDigit(i, digit);
     return Promise.resolve();
   }
 
   const h = cellHeight();
 
-  const spins = digits.map((digit, i) => {
-    const r = reels[i];
-    const duration = DURATION_BASE + i * DURATION_STAGGER;
-    const cycles = CYCLES_BASE + i;
+  // Rewind to the equivalent position in the first cycle so the strip never
+  // runs out of cells, then force a reflow so the reset isn't animated away.
+  lane.strip.style.transition = 'none';
+  lane.strip.style.transform = `translateY(${-lane.digit * h}px)`;
+  void lane.strip.offsetHeight;
 
-    // Rewind to the equivalent position in the first cycle so the strip never
-    // runs out of cells, then force a reflow so the reset isn't animated away.
-    r.strip.style.transition = 'none';
-    r.strip.style.transform = `translateY(${-r.digit * h}px)`;
-    void r.strip.offsetHeight;
+  lane.lane.classList.add('is-rolling');
+  lane.strip.classList.add('is-blurred');
+  lane.strip.style.transition = `transform ${DURATION}ms ${EASING}`;
+  lane.strip.style.transform = `translateY(${-(CYCLES * 10 + digit) * h}px)`;
+  lane.digit = digit;
 
-    r.strip.classList.add('is-blurred');
-    r.strip.style.transition = `transform ${duration}ms ${EASING}`;
-    r.strip.style.transform = `translateY(${-(cycles * 10 + digit) * h}px)`;
-    r.digit = digit;
+  const unblur = setTimeout(() => lane.strip.classList.remove('is-blurred'), Math.max(0, DURATION - 420));
 
-    // Pull focus back just before the reel settles.
-    const unblur = setTimeout(() => r.strip.classList.remove('is-blurred'), Math.max(0, duration - 420));
-
-    return new Promise((resolve) => {
-      const done = () => {
-        clearTimeout(unblur);
-        r.strip.classList.remove('is-blurred');
-        r.reel.classList.remove('is-landing');
-        void r.reel.offsetWidth;
-        r.reel.classList.add('is-landing');
-        onLand(i, digit);
-        resolve();
-      };
-      // transitionend can be missed if the tab is backgrounded — always have
-      // a timer as the backstop.
-      const timer = setTimeout(done, duration + 30);
-      r.strip.addEventListener(
-        'transitionend',
-        () => {
-          clearTimeout(timer);
-          done();
-        },
-        { once: true },
-      );
-    });
+  return new Promise((resolve) => {
+    const done = () => {
+      clearTimeout(unblur);
+      lane.strip.classList.remove('is-blurred');
+      lane.reel.classList.remove('is-landing');
+      void lane.reel.offsetWidth;
+      lane.reel.classList.add('is-landing');
+      resolve();
+    };
+    // transitionend can be missed if the tab is backgrounded — always have a
+    // timer as the backstop.
+    const timer = setTimeout(done, DURATION + 30);
+    lane.strip.addEventListener(
+      'transitionend',
+      () => {
+        clearTimeout(timer);
+        done();
+      },
+      { once: true },
+    );
   });
+}
 
-  return Promise.all(spins).then(() => updateLabel(digits));
+/** Celebratory pulse on a bullseye lane. */
+export function flashBullseye(i) {
+  const lane = lanes[i];
+  if (!lane || prefersReducedMotion()) return;
+  lane.lane.classList.remove('is-bullseye');
+  void lane.lane.offsetWidth;
+  lane.lane.classList.add('is-bullseye');
+}
+
+export function laneElement(i) {
+  return lanes[i]?.lane || null;
 }
