@@ -94,16 +94,49 @@ export function counting(steps = 6) {
   }
 }
 
-/** Rank reveal. Bigger ranks get a fuller chord. */
+/**
+ * Rank reveal. The chord widens and the root climbs with the tier, so the
+ * fifteen ranks are audibly distinguishable rather than three sounds reused.
+ */
 export function fanfare(rankIndex) {
-  const root = 196 * Math.pow(2, Math.min(rankIndex, 9) / 12);
-  const chord = rankIndex >= 6 ? [1, 1.25, 1.5, 2, 2.5] : rankIndex >= 3 ? [1, 1.25, 1.5] : [1, 1.5];
+  const root = 175 * Math.pow(2, Math.min(rankIndex, 14) / 14);
+  const chord =
+    rankIndex >= 11
+      ? [1, 1.25, 1.5, 2, 2.5, 3, 4]
+      : rankIndex >= 9
+        ? [1, 1.25, 1.5, 2, 2.5]
+        : rankIndex >= 6
+          ? [1, 1.25, 1.5, 2]
+          : rankIndex >= 3
+            ? [1, 1.25, 1.5]
+            : [1, 1.5];
+
   chord.forEach((ratio, i) => {
     tone({ freq: root * ratio, type: 'triangle', duration: 0.9, gain: 0.2, delay: i * 0.05 });
   });
-  if (rankIndex >= 5) {
-    tone({ freq: root * 4, type: 'sine', duration: 1.4, gain: 0.14, delay: 0.22 });
+  if (rankIndex >= 8) {
+    tone({ freq: root * 4, type: 'sine', duration: 1.6, gain: 0.14, delay: 0.22 });
   }
+  if (rankIndex >= 12) {
+    // A slow shimmer on top for the very rarest tiers.
+    tone({ freq: root * 6, type: 'sine', duration: 2.2, gain: 0.1, delay: 0.4 });
+  }
+}
+
+/**
+ * The press itself. A click transient over a pitched-down body, so the button
+ * feels mechanical rather than beepy — this fires the instant the pointer goes
+ * down, before anything else in the roll sequence.
+ */
+export function press() {
+  tone({ freq: 1800, type: 'square', duration: 0.025, gain: 0.16 });
+  tone({ freq: 320, type: 'triangle', duration: 0.13, gain: 0.42, sweepTo: 90 });
+  tone({ freq: 70, type: 'sine', duration: 0.2, gain: 0.5 });
+}
+
+/** Springy release, so letting go is its own small event. */
+export function release() {
+  tone({ freq: 520, type: 'sine', duration: 0.07, gain: 0.14, sweepTo: 780 });
 }
 
 export function thud() {

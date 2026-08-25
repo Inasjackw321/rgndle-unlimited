@@ -3,24 +3,30 @@
  */
 
 import { rollDigits, rollCosmic, scoreRoll, timeBonus, highlightIndices } from './scoring.js';
-import { percentileOf, rankFor, RANKS, SAMPLE_SIZE } from './ranks.js';
+import { percentileOf, rankFor, celebration, RANKS, SAMPLE_SIZE } from './ranks.js';
 import { mountReels, spin, setDigits, highlight, clearHighlights } from './reels.js';
-import { startStarfield, initParticles, burst, countUp, shake, wait } from './fx.js';
+import {
+  startStarfield,
+  initParticles,
+  burst,
+  countUp,
+  shake,
+  wait,
+  pressRipple,
+  buzz,
+} from './fx.js';
 import * as audio from './audio.js';
 import * as auth from './auth.js';
 import * as board from './leaderboard.js';
 import * as daily from './daily.js';
 import * as achievements from './achievements.js';
 import * as share from './share.js';
-import * as google from './google.js';
 import * as profile from './profile.js';
 import {
   resolved,
-  redirectUri,
   overrides,
   saveOverrides,
   clearOverrides,
-  isValidClientId,
   isValidGoogleClientId,
   jsOrigin,
 } from './config.js';
@@ -254,7 +260,7 @@ async function roll() {
   ui.renderMeta(result);
   highlight(highlightIndices(digits));
 
-  const countDuration = 900 + Math.min(rankIndex, 8) * 90;
+  const countDuration = 900 + Math.min(rankIndex, 12) * 70;
   audio.counting(6 + rankIndex);
   ui.renderFactors(result);
   await countUp(ui.el('verdict-score'), result.total, countDuration);
@@ -263,15 +269,21 @@ async function roll() {
   ui.renderRarity(percentile, rank);
   audio.fanfare(rankIndex);
 
-  if (rankIndex >= 7) {
+  const party = celebration(rankIndex);
+  if (party >= 3) {
     audio.thud();
     shake(document.body, true);
-    burst(ui.el('verdict-rank'), { count: 220, colors: [rank.color, '#fff', '#ffc857'], power: 1.5 });
-    setTimeout(() => burst(machine, { count: 160, colors: [rank.color, '#fff'], power: 1.3 }), 260);
-  } else if (rankIndex >= 5) {
+    burst(ui.el('verdict-rank'), { count: 260, colors: [rank.color, '#fff', '#ffc857'], power: 1.6 });
+    setTimeout(() => burst(machine, { count: 180, colors: [rank.color, '#fff'], power: 1.35 }), 260);
+    setTimeout(() => burst(ui.el('reels'), { count: 140, colors: [rank.color, '#ffc857'], power: 1.2 }), 520);
+  } else if (party >= 2) {
+    audio.thud();
+    shake(document.body, true);
+    burst(ui.el('verdict-rank'), { count: 180, colors: [rank.color, '#fff', '#ffc857'], power: 1.35 });
+  } else if (party >= 1) {
     shake(document.body, false);
-    burst(ui.el('verdict-rank'), { count: 130, colors: [rank.color, '#ffc857'], power: 1.15 });
-  } else if (rankIndex >= 4) {
+    burst(ui.el('verdict-rank'), { count: 120, colors: [rank.color, '#ffc857'], power: 1.15 });
+  } else if (party > 0) {
     burst(ui.el('verdict-rank'), { count: 70, colors: [rank.color] });
   }
 
@@ -351,36 +363,33 @@ function setupHelp() {
 
 function setupHelpText() {
   const setup = ui.el('help-setup');
-  if (resolved().discordClientId) {
-    setup.textContent = `Discord sign-in is enabled. The leaderboard is ${
+  if (resolved().googleClientId) {
+    setup.textContent = `Google sign-in is enabled. The leaderboard is ${
       board.isShared() ? 'shared across all players.' : 'stored on this device only.'
     }`;
   } else {
     setup.textContent =
-      'Discord sign-in is not configured yet. It takes about a minute and needs no server — a client ID is public.';
+      'Google sign-in is not configured yet. It takes about a minute and needs no server — a client ID is public.';
   }
 }
 
 function setupSetupDialog() {
   const dialog = ui.el('setup-dialog');
   const form = ui.el('setup-form');
-  const clientIdInput = ui.el('setup-client-id');
   const googleIdInput = ui.el('setup-google-id');
   const endpointInput = ui.el('setup-endpoint');
   const error = ui.el('setup-error');
 
-  ui.el('setup-redirect').textContent = redirectUri();
   ui.el('setup-origin').textContent = jsOrigin();
 
   const open = () => {
     const current = overrides();
     const active = resolved();
-    clientIdInput.value = current.discordClientId || active.discordClientId || '';
     googleIdInput.value = current.googleClientId || active.googleClientId || '';
     endpointInput.value = current.leaderboardEndpoint || active.leaderboardEndpoint || '';
     error.hidden = true;
     dialog.showModal();
-    (googleIdInput.value || !clientIdInput.value ? googleIdInput : clientIdInput).focus();
+    googleIdInput.focus();
   };
 
   ui.el('open-setup').addEventListener('click', () => {
@@ -393,16 +402,11 @@ function setupSetupDialog() {
     if (e.target === dialog) dialog.close();
   });
 
-  for (const [btnId, value] of [
-    ['copy-redirect', redirectUri],
-    ['copy-origin', jsOrigin],
-  ]) {
-    const btn = ui.el(btnId);
-    btn.addEventListener('click', async () => {
-      const ok = await share.copyText(value());
-      ui.flashButton(btn, ok ? 'Copied!' : 'Select it');
-    });
-  }
+  const copyBtn = ui.el('copy-origin');
+  copyBtn.addEventListener('click', async () => {
+    const ok = await share.copyText(jsOrigin());
+    ui.flashButton(copyBtn, ok ? 'Copied!' : 'Select it');
+  });
 
   ui.el('setup-clear').addEventListener('click', () => {
     clearOverrides();
@@ -410,7 +414,6 @@ function setupSetupDialog() {
     // here is clearer than leaving a chip that can't re-authenticate.
     auth.logout();
     reloadProfile();
-    clientIdInput.value = '';
     googleIdInput.value = '';
     endpointInput.value = '';
     error.hidden = true;
@@ -428,20 +431,13 @@ function setupSetupDialog() {
 
   form.addEventListener('submit', (e) => {
     e.preventDefault();
-    const discordId = clientIdInput.value.trim();
     const googleId = googleIdInput.value.trim();
     const endpoint = endpointInput.value.trim();
 
-    if (!discordId && !googleId) {
-      return fail('Enter at least one client ID — Google, Discord, or both.', googleIdInput);
+    if (!googleId) {
+      return fail('Paste your Google client ID to enable sign-in.', googleIdInput);
     }
-    if (discordId && !isValidClientId(discordId)) {
-      return fail(
-        'That does not look like a Discord client ID. It is a number of 17 to 20 digits — copy it from the OAuth2 page, not the application name.',
-        clientIdInput,
-      );
-    }
-    if (googleId && !isValidGoogleClientId(googleId)) {
+    if (!isValidGoogleClientId(googleId)) {
       return fail(
         'That does not look like a Google client ID. It ends in .apps.googleusercontent.com — copy the Client ID, not the client secret.',
         googleIdInput,
@@ -451,23 +447,14 @@ function setupSetupDialog() {
       return fail('The leaderboard endpoint must start with https://', endpointInput);
     }
 
-    if (
-      !saveOverrides({
-        discordClientId: discordId,
-        googleClientId: googleId,
-        leaderboardEndpoint: endpoint,
-      })
-    ) {
+    if (!saveOverrides({ googleClientId: googleId, leaderboardEndpoint: endpoint })) {
       return fail('This browser is blocking storage, so settings cannot be saved here.');
     }
 
     dialog.close();
-    paintAuth(auth.currentSession());
     setupHelpText();
-    // Straight into sign-in — the click that submitted the form is a user
-    // gesture, so a popup won't be blocked. Google renders its own button, so
-    // only Discord can be launched directly from here.
-    if (discordId) signIn({ provider: 'discord' });
+    // Repainting mounts Google's button, which is how sign-in is started.
+    paintAuth(auth.currentSession());
   });
 
   return { open };
@@ -488,6 +475,43 @@ function setupSound() {
   paint();
 }
 
+/**
+ * Press feedback. Deliberately fires on pointerdown rather than click: the gap
+ * between pressing and releasing is exactly where a button feels dead, and the
+ * sound, ripple and haptic all belong at the moment of contact.
+ */
+function setupRollButton() {
+  const btn = ui.el('roll-btn');
+
+  const down = (event) => {
+    if (btn.disabled) return;
+    btn.classList.add('is-pressed');
+    audio.unlock();
+    audio.press();
+    buzz(12);
+    pressRipple(btn, event);
+  };
+
+  const up = () => btn.classList.remove('is-pressed');
+
+  btn.addEventListener('pointerdown', down);
+  btn.addEventListener('pointerup', up);
+  btn.addEventListener('pointerleave', up);
+  btn.addEventListener('pointercancel', up);
+  btn.addEventListener('click', () => {
+    audio.release();
+    roll();
+  });
+
+  // Keyboard activation gets the same treatment, including from the space-bar
+  // shortcut, so it never feels like the lesser path.
+  window.addEventListener('rngdle:press', () => {
+    if (btn.disabled) return;
+    down();
+    setTimeout(up, 110);
+  });
+}
+
 function setupKeyboard() {
   window.addEventListener('keydown', (e) => {
     if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
@@ -496,6 +520,7 @@ function setupKeyboard() {
     if (ui.el('help-dialog').open) return;
     if (e.code === 'Space' || e.code === 'Enter') {
       e.preventDefault();
+      window.dispatchEvent(new Event('rngdle:press'));
       roll();
     }
   });
@@ -553,15 +578,10 @@ let openSetup = () => {};
 
 function paintAuth(session) {
   ui.renderAuth(session, {
-    providers: auth.availableProviders().map((p) => ({ id: p.id, label: p.label })),
-    canReconnect: auth.hasSignedInBefore(),
-    expiring: auth.needsRenewal(),
+    configured: auth.isConfigured(),
     onSetup: () => openSetup(),
-    onLogin: (providerId) => signIn({ provider: providerId }),
-    onReconnect: () => signIn({ provider: auth.lastProvider(), silent: true }),
-    mountProvider: (providerId, host) => {
-      if (providerId !== 'google') return;
-      google.renderButton(host).catch((err) => {
+    mountButton: (host) => {
+      auth.mountButton(host).catch((err) => {
         host.textContent = err.message;
         host.className = 'google-host is-failed';
       });
@@ -613,18 +633,7 @@ async function afterSignIn(session) {
   await refreshBoard();
 }
 
-async function signIn({ provider, silent = false }) {
-  if (!provider) return;
-  try {
-    const session = await auth.login(provider, { silent });
-    if (!session) return; // silent attempt declined; leave the UI as it was
-    await afterSignIn(session);
-  } catch (err) {
-    if (err.code === 'cancelled') return;
-    const name = auth.PROVIDERS[provider]?.label || provider;
-    ui.notice(`${name} sign-in failed: ${err.message}`);
-  }
-}
+
 
 async function init() {
   startStarfield(ui.el('starfield'));
@@ -644,11 +653,11 @@ async function init() {
   reloadProfile();
   if (state.history.length) setDigits([...state.history[0].digits].map(Number));
 
-  ui.el('roll-btn').addEventListener('click', roll);
+  setupRollButton();
 
   // Google delivers credentials through its own callback, so adopt whatever
   // its rendered button produces rather than waiting on a promise.
-  google.onSession((session) => {
+  auth.onSession((session) => {
     auth.adoptSession(session);
     afterSignIn(session);
   });

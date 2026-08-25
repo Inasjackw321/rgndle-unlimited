@@ -19,13 +19,18 @@ export const ACHIEVEMENTS = [
   { id: 'rolls-1000', icon: '🗿', name: 'Ask For Help', desc: 'Roll 1,000 times', test: (c) => c.totals.rolls >= 1000 },
 
   /* --- Ranks ------------------------------------------------------ */
-  { id: 'rank-b', icon: '🔷', name: 'Respectable', desc: 'Reach rank B', test: (c) => c.rankIndex >= 3 },
-  { id: 'rank-a', icon: '🟣', name: 'Excellent', desc: 'Reach rank A', test: (c) => c.rankIndex >= 4 },
-  { id: 'rank-s', icon: '⭐', name: 'Extraordinary', desc: 'Reach rank S', test: (c) => c.rankIndex >= 5 },
-  { id: 'rank-ss', icon: '🌟', name: 'Legendary', desc: 'Reach rank SS', test: (c) => c.rankIndex >= 6 },
-  { id: 'rank-sss', icon: '✨', name: 'Mythic', desc: 'Reach rank SSS', test: (c) => c.rankIndex >= 7 },
-  { id: 'rank-ultra', icon: '💠', name: 'Beyond Reason', desc: 'Reach rank ULTRA', test: (c) => c.rankIndex >= 8 },
-  { id: 'rank-omega', icon: '🕳️', name: 'Reality Error', desc: 'Reach rank Ω', test: (c) => c.rankIndex >= 9 },
+  { id: 'rank-c', icon: '🟩', name: 'Passable', desc: 'Reach rank C', test: (c) => c.rankIndex >= 3 },
+  { id: 'rank-b', icon: '🔷', name: 'Respectable', desc: 'Reach rank B', test: (c) => c.rankIndex >= 4 },
+  { id: 'rank-a', icon: '🟣', name: 'Excellent', desc: 'Reach rank A', test: (c) => c.rankIndex >= 5 },
+  { id: 'rank-aplus', icon: '🔮', name: 'Exceptional', desc: 'Reach rank A+', test: (c) => c.rankIndex >= 6 },
+  { id: 'rank-s', icon: '⭐', name: 'Extraordinary', desc: 'Reach rank S', test: (c) => c.rankIndex >= 7 },
+  { id: 'rank-splus', icon: '🌠', name: 'Phenomenal', desc: 'Reach rank S+', test: (c) => c.rankIndex >= 8 },
+  { id: 'rank-ss', icon: '🌟', name: 'Legendary', desc: 'Reach rank SS', test: (c) => c.rankIndex >= 9 },
+  { id: 'rank-sss', icon: '✨', name: 'Mythic', desc: 'Reach rank SSS', test: (c) => c.rankIndex >= 10 },
+  { id: 'rank-ultra', icon: '💠', name: 'Beyond Reason', desc: 'Reach rank ULTRA', test: (c) => c.rankIndex >= 11 },
+  { id: 'rank-cosmic', icon: '🪐', name: 'Cosmic Anomaly', desc: 'Reach rank COSMIC', test: (c) => c.rankIndex >= 12 },
+  { id: 'rank-eternal', icon: '♾️', name: 'Eternal', desc: 'Reach rank ETERNAL', secret: true, test: (c) => c.rankIndex >= 13 },
+  { id: 'rank-omega', icon: '🕳️', name: 'Reality Error', desc: 'Reach rank Ω', secret: true, test: (c) => c.rankIndex >= 14 },
 
   /* --- Score milestones -------------------------------------------- */
   { id: 'score-10k', icon: '📈', name: 'Five Figures', desc: 'Score 10,000 in one roll', test: (c) => c.result.total >= 10000 },
@@ -66,6 +71,58 @@ export const ACHIEVEMENTS = [
   { id: 'round', icon: '⭕', name: 'Nice And Round', desc: 'Roll three or more trailing zeros', test: (c) => has(c, 'Round Number') },
   { id: 'alternating', icon: '🦓', name: 'Zebra', desc: 'Roll a perfect ABABABABA pattern', test: (c) => has(c, 'PERFECT ALTERNATION') },
 
+  /* --- Digit alphabets --------------------------------------------- */
+  {
+    id: 'binary',
+    icon: '💾',
+    name: 'Binary',
+    desc: 'Roll nothing but zeros and ones',
+    secret: true,
+    test: (c) => has(c, 'BINARY'),
+  },
+  { id: 'primedigits', icon: '🧮', name: 'Prime Cuts', desc: 'Roll only prime digits', test: (c) => has(c, 'Prime Digits') },
+  { id: 'alleven', icon: '⚖️', name: 'All Even', desc: 'Roll no odd digits', test: (c) => has(c, 'All Even') },
+  { id: 'allodd', icon: '🎯', name: 'All Odd', desc: 'Roll no even digits', test: (c) => has(c, 'All Odd') },
+
+  /* --- Ordering ----------------------------------------------------- */
+  { id: 'sorted', icon: '📶', name: 'In Order', desc: 'Roll digits that never decrease', test: (c) => has(c, 'Sorted') },
+  {
+    id: 'reversesorted',
+    icon: '📉',
+    name: 'Backwards',
+    desc: 'Roll digits that never increase',
+    test: (c) => has(c, 'Reverse Sorted'),
+  },
+  { id: 'stutter', icon: '🗣️', name: 'S-S-Stutter', desc: 'Roll AABBCCDD', test: (c) => has(c, 'Stutter') },
+  {
+    id: 'wrapped',
+    icon: '🔄',
+    name: 'Round the Bend',
+    desc: 'Roll a straight through the 9-0 seam',
+    test: (c) => has(c, 'Wrapped Straight'),
+  },
+
+  /* --- Number theory ------------------------------------------------- */
+  { id: 'cube', icon: '🧊', name: 'Cubed', desc: 'Roll a perfect cube', test: (c) => has(c, 'Perfect Cube') },
+  {
+    id: 'pow2',
+    icon: '💻',
+    name: 'Power of Two',
+    desc: 'Roll an exact power of two',
+    secret: true,
+    test: (c) => has(c, 'Power of Two'),
+  },
+  {
+    id: 'fibnumber',
+    icon: '🐚',
+    name: 'Golden Spiral',
+    desc: 'Roll a Fibonacci number',
+    secret: true,
+    test: (c) => has(c, 'Fibonacci Number'),
+  },
+  { id: 'triangular', icon: '🔺', name: 'Triangular', desc: 'Roll a triangular number', test: (c) => has(c, 'Triangular Number') },
+  { id: 'answer', icon: '🐬', name: 'So Long, and Thanks', desc: 'Roll a digit sum of exactly 42', test: (c) => has(c, 'The Answer') },
+
   /* --- Culture ----------------------------------------------------- */
   { id: 'nice', icon: '😎', name: 'Nice', desc: 'Roll a 69', test: (c) => has(c, 'Nice') },
   { id: 'blaze', icon: '🌿', name: 'Blaze It', desc: 'Roll a 420', test: (c) => has(c, 'Blaze It') },
@@ -78,6 +135,29 @@ export const ACHIEVEMENTS = [
   { id: 'cosmic-5', icon: '🔮', name: 'Divine Favour', desc: 'Land a ×5 cosmic multiplier', test: (c) => c.result.cosmic.value >= 5 },
   { id: 'cosmic-10', icon: '☄️', name: 'Transcendent', desc: 'Land a ×10 cosmic multiplier', test: (c) => c.result.cosmic.value >= 10 },
   { id: 'cosmic-25', icon: '💥', name: 'Reality Broken', desc: 'Land a ×25 cosmic multiplier', secret: true, test: (c) => c.result.cosmic.value >= 25 },
+  {
+    id: 'cosmic-100',
+    icon: '🌀',
+    name: 'IMPOSSIBLE',
+    desc: 'Land the ×100 cosmic multiplier',
+    secret: true,
+    test: (c) => c.result.cosmic.value >= 100,
+  },
+  {
+    id: 'stacked',
+    icon: '🥞',
+    name: 'Stacked',
+    desc: 'Score a roll with six or more factors at once',
+    test: (c) => c.result.factors.length >= 6,
+  },
+  {
+    id: 'loaded',
+    icon: '🎁',
+    name: 'Everything Everywhere',
+    desc: 'Score a roll with nine or more factors at once',
+    secret: true,
+    test: (c) => c.result.factors.length >= 9,
+  },
   { id: 'streak-5', icon: '🔥', name: 'On A Roll', desc: 'Beat your previous score five times running', test: (c) => c.totals.streak >= 5 },
   { id: 'streak-8', icon: '🌋', name: 'Unstoppable', desc: 'Beat your previous score eight times running', test: (c) => c.totals.streak >= 8 },
 

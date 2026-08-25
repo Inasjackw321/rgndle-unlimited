@@ -178,4 +178,43 @@ export function shake(el, big = false) {
   setTimeout(() => el.classList.remove(cls), big ? 700 : 400);
 }
 
+/**
+ * Material-style ripple from the exact point that was pressed, plus an
+ * expanding ring that escapes the button's bounds. The ripple lives inside the
+ * button (clipped by its overflow), the ring is a sibling so it can grow past
+ * the edge.
+ */
+export function pressRipple(button, event) {
+  if (reduced()) return;
+  const rect = button.getBoundingClientRect();
+  const x = (event?.clientX ?? rect.left + rect.width / 2) - rect.left;
+  const y = (event?.clientY ?? rect.top + rect.height / 2) - rect.top;
+
+  const ripple = document.createElement('span');
+  ripple.className = 'ripple';
+  const size = Math.max(rect.width, rect.height) * 2.2;
+  ripple.style.width = `${size}px`;
+  ripple.style.height = `${size}px`;
+  ripple.style.left = `${x - size / 2}px`;
+  ripple.style.top = `${y - size / 2}px`;
+  button.append(ripple);
+  ripple.addEventListener('animationend', () => ripple.remove(), { once: true });
+
+  const ring = document.createElement('span');
+  ring.className = 'shockwave';
+  button.parentElement?.append(ring);
+  ring.style.left = `${button.offsetLeft + button.offsetWidth / 2}px`;
+  ring.style.top = `${button.offsetTop + button.offsetHeight / 2}px`;
+  ring.addEventListener('animationend', () => ring.remove(), { once: true });
+}
+
+/** Short haptic tap where the device supports it. Silently ignored elsewhere. */
+export function buzz(pattern = 12) {
+  try {
+    navigator.vibrate?.(pattern);
+  } catch {
+    /* not supported, or blocked by permissions policy */
+  }
+}
+
 export const wait = (ms) => new Promise((r) => setTimeout(r, ms));

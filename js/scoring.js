@@ -40,6 +40,35 @@ function isPerfectSquare(n) {
   return r * r === n;
 }
 
+function isPerfectCube(n) {
+  if (n < 0) return false;
+  const r = Math.round(Math.cbrt(n));
+  return r * r * r === n;
+}
+
+function isPowerOfTwo(n) {
+  return n > 0 && (n & (n - 1)) === 0;
+}
+
+/** T(k) = k(k+1)/2. Invert and check. */
+function isTriangular(n) {
+  if (n < 1) return false;
+  const k = Math.floor((Math.sqrt(8 * n + 1) - 1) / 2);
+  return (k * (k + 1)) / 2 === n || ((k + 1) * (k + 2)) / 2 === n;
+}
+
+/** Every Fibonacci number below 1e9 — there are only 44 of them. */
+const FIBONACCI = (() => {
+  const out = new Set();
+  let a = 0;
+  let b = 1;
+  while (a < 1e9) {
+    out.add(a);
+    [a, b] = [b, a + b];
+  }
+  return out;
+})();
+
 /* ------------------------------------------------------------------ *
  * Digit pattern helpers
  * ------------------------------------------------------------------ */
@@ -197,6 +226,37 @@ function shapeLabel(d) {
     .join('+');
 }
 
+/** Longest run of consecutive digits allowing 9->0 wrap, in either direction. */
+function longestWrappedRun(d) {
+  let best = 1;
+  for (const step of [1, -1]) {
+    let run = 1;
+    for (let i = 1; i < d.length; i++) {
+      run = (d[i - 1] + step + 10) % 10 === d[i] ? run + 1 : 1;
+      if (run > best) best = run;
+    }
+  }
+  return best;
+}
+
+/**
+ * AABBCCDD-style doubling. The roll length is odd, so the trailing digit is a
+ * free single: only the leading pairs have to match.
+ */
+function isStutter(d) {
+  for (let i = 0; i + 1 < d.length - (d.length % 2); i += 2) {
+    if (d[i] !== d[i + 1]) return false;
+  }
+  return true;
+}
+
+function isSorted(d, direction) {
+  for (let i = 1; i < d.length; i++) {
+    if (direction > 0 ? d[i] < d[i - 1] : d[i] > d[i - 1]) return false;
+  }
+  return true;
+}
+
 function shannonEntropy(d) {
   const counts = new Array(10).fill(0);
   for (const x of d) counts[x]++;
@@ -236,14 +296,19 @@ const CULTURE = [
  * ------------------------------------------------------------------ */
 
 export const COSMIC_TABLE = [
-  { weight: 0.6, value: 1, label: 'Mundane' },
-  { weight: 0.2, value: 1.25, label: 'Favoured' },
-  { weight: 0.1, value: 1.5, label: 'Blessed' },
-  { weight: 0.06, value: 2, label: 'Ascendant' },
-  { weight: 0.03, value: 3, label: 'Celestial' },
+  { weight: 0.5, value: 1, label: 'Mundane' },
+  { weight: 0.19, value: 1.1, label: 'Stirring' },
+  { weight: 0.13, value: 1.25, label: 'Favoured' },
+  { weight: 0.09, value: 1.5, label: 'Blessed' },
+  { weight: 0.055, value: 2, label: 'Ascendant' },
+  { weight: 0.022, value: 3, label: 'Celestial' },
   { weight: 0.008, value: 5, label: 'Divine' },
-  { weight: 0.0015, value: 10, label: 'Transcendent' },
-  { weight: 0.0005, value: 25, label: 'Reality Broken' },
+  { weight: 0.003, value: 7, label: 'Seraphic' },
+  { weight: 0.0012, value: 10, label: 'Transcendent' },
+  { weight: 0.0005, value: 15, label: 'Apotheosis' },
+  { weight: 0.00018, value: 25, label: 'Reality Broken' },
+  { weight: 0.00007, value: 50, label: 'Singularity' },
+  { weight: 0.00005, value: 100, label: 'IMPOSSIBLE' },
 ];
 
 export function rollCosmic(rand) {
@@ -400,7 +465,36 @@ export function scoreRoll(digits, cosmic, extra = {}) {
     add('square', 'Perfect Square', `${Math.round(Math.sqrt(value))}²`, 180000);
   }
 
-  /* --- 12. Entropy --------------------------------------------------- */
+  /* --- 12. Digit alphabets ------------------------------------------- */
+  const allIn = (set) => digits.every((x) => set.has(x));
+  if (allIn(new Set([0, 1]))) add('binary', 'BINARY', 'zeros and ones only', 400000);
+  else if (allIn(new Set([2, 3, 5, 7]))) add('primedigits', 'Prime Digits', 'every digit prime', 9000);
+  else if (allIn(new Set([0, 2, 4, 6, 8]))) add('even', 'All Even', 'no odd digits', 2600);
+  else if (allIn(new Set([1, 3, 5, 7, 9]))) add('odd', 'All Odd', 'no even digits', 2600);
+
+  /* --- 13. Ordering --------------------------------------------------- */
+  if (distinct > 1 && isSorted(digits, 1)) add('sortedup', 'Sorted', 'never decreases', 45000);
+  else if (distinct > 1 && isSorted(digits, -1)) add('sorteddown', 'Reverse Sorted', 'never increases', 45000);
+
+  if (distinct > 1 && isStutter(digits)) add('stutter', 'Stutter', 'AABBCCDD', 30000);
+
+  // Wrapped straights only pay when the wrap is what made them long, otherwise
+  // the plain straight above has already been paid for the same digits.
+  const wrapped = longestWrappedRun(digits);
+  if (wrapped >= 5 && wrapped > Math.max(asc, desc)) {
+    add('wrapped', 'Wrapped Straight', `${wrapped} digits through the 9-0 seam`, 260 * Math.pow(4, wrapped - 5));
+  }
+
+  /* --- 14. The roll as a number --------------------------------------- */
+  if (isPerfectCube(value) && value > 1) {
+    add('cube', 'Perfect Cube', `${Math.round(Math.cbrt(value))}³`, 250000);
+  }
+  if (isPowerOfTwo(value)) add('pow2', 'Power of Two', `2^${Math.round(Math.log2(value))}`, 400000);
+  if (FIBONACCI.has(value)) add('fib', 'Fibonacci Number', 'in the sequence itself', 400000);
+  if (isTriangular(value)) add('triangular', 'Triangular Number', 'a perfect triangle', 40000);
+  if (sum === 42) add('answer', 'The Answer', 'digit sum 42', 3000);
+
+  /* --- 15. Entropy --------------------------------------------------- */
   const entropy = shannonEntropy(digits);
   if (entropy < 1.2) add('entropy', 'Low Entropy', `H = ${entropy.toFixed(2)} bits`, 4800);
 

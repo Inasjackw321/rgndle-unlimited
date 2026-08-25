@@ -1,10 +1,10 @@
 /**
  * Google sign-in via Google Identity Services (GIS).
  *
- * GIS hands the browser a signed JWT ID token directly, so — like Discord's
- * implicit grant — there is no token exchange, no client secret and no server.
- * It authorises a **JavaScript origin** rather than an exact redirect URL,
- * which is one fewer thing to get wrong than the Discord setup.
+ * GIS hands the browser a signed JWT ID token directly: no token exchange, no
+ * client secret and no server, which is what lets sign-in work on a static
+ * host. It authorises a **JavaScript origin** rather than an exact redirect
+ * URL, so there is no redirect path to get wrong.
  *
  * Two lifetimes matter here and they are not the same:
  *

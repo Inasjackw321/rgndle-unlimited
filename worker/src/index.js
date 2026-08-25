@@ -7,21 +7,21 @@
  *
  * Routes:
  *   GET  /leaderboard?scope=all|daily&day=YYYY-MM-DD&limit=100   public, cached
- *   POST /scores                                                 Discord bearer token
+ *   POST /scores                                                 Google ID token
  *
  * Trust model — please read before deploying:
  *
  *   Daily mode is fully verified. The roll is a pure function of (UTC date,
- *   Discord user ID), so the Worker recomputes it and ignores whatever digits
+ *   Google account ID), so the Worker recomputes it and ignores whatever digits
  *   the client sent. A daily submission cannot claim a roll the player didn't
  *   get, and cannot be rerolled.
  *
- *   Both providers are verified server-side. Discord access tokens are checked
- *   against the Discord API; Google ID tokens have their RS256 signature
- *   verified against Google's published keys, with issuer, audience and expiry
- *   all enforced. Set GOOGLE_CLIENT_ID or Google sign-ins are rejected.
+ *   Identity is verified server-side: every Google ID token has its RS256
+ *   signature checked against Google's published keys, with issuer, audience
+ *   and expiry all enforced. GOOGLE_CLIENT_ID must be set or every sign-in is
+ *   rejected — without it a token minted for any other site would pass.
  *
- *   Endless mode is not, and cannot be on a static front end. The roll happens
+ *   Endless mode is not verified, and cannot be on a static front end. The roll happens
  *   in the browser. What the Worker enforces is that a submitted score is
  *   arithmetically consistent with its digits: it recomputes the base score
  *   with the same engine the client uses, checks the cosmic multiplier against
@@ -46,7 +46,7 @@ function corsHeaders(env) {
   return {
     'Access-Control-Allow-Origin': env.ALLOWED_ORIGIN || '*',
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Auth-Provider',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     'Access-Control-Max-Age': '86400',
   };
 }
@@ -59,7 +59,7 @@ function json(body, status, env, extra = {}) {
 }
 
 /* ------------------------------------------------------------------ *
- * Discord identity
+ * Identity
  * ------------------------------------------------------------------ */
 
 async function sha256(text) {
@@ -148,33 +148,13 @@ async function verifyGoogleToken(jwt, env) {
   };
 }
 
-async function verifyDiscordToken(token, env) {
-  const res = await fetch('https://discord.com/api/v10/users/@me', {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) return null;
-
-  const user = await res.json();
-  return {
-    provider: 'discord',
-    id: user.id,
-    name: user.global_name || user.username,
-    avatar: user.avatar,
-    discriminator: user.discriminator,
-  };
-}
-
-/**
- * Resolves a bearer token to a user for whichever provider sent it.
- * Cached briefly, keyed by the token itself.
- */
-async function identify(token, provider, env) {
+/** Resolves a bearer token to a user. Cached briefly, keyed by the token. */
+async function identify(token, env) {
   const cacheKey = `token:${await sha256(token)}`;
   const cached = await env.RNGDLE.get(cacheKey, 'json');
   if (cached) return cached;
 
-  const user =
-    provider === 'google' ? await verifyGoogleToken(token, env) : await verifyDiscordToken(token, env);
+  const user = await verifyGoogleToken(token, env);
   if (!user) return null;
 
   // Never cache past the token's own lifetime.
@@ -182,21 +162,10 @@ async function identify(token, provider, env) {
   return user;
 }
 
-/** Stable cross-provider identity; must match the client's playerKey(). */
-const playerKey = (user) => `${user.provider}:${user.id}`;
+/** Stable identity; must match the client's playerKey(). */
+const playerKey = (user) => `google:${user.id}`;
 
-function avatarUrl(user) {
-  if (user.provider === 'google') return user.picture || null;
-  if (user.avatar) {
-    const ext = user.avatar.startsWith('a_') ? 'gif' : 'png';
-    return `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.${ext}?size=64`;
-  }
-  const index =
-    user.discriminator && user.discriminator !== '0'
-      ? Number(user.discriminator) % 5
-      : Number((BigInt(user.id) >> 22n) % 6n);
-  return `https://cdn.discordapp.com/embed/avatars/${index}.png`;
-}
+const avatarUrl = (user) => user.picture || null;
 
 async function rateLimited(userId, env) {
   const key = `rate:${userId}:${Math.floor(Date.now() / 60000)}`;
@@ -339,9 +308,8 @@ export default {
       const token = header.startsWith('Bearer ') ? header.slice(7) : null;
       if (!token) return json({ error: 'missing bearer token' }, 401, env);
 
-      const provider = request.headers.get('X-Auth-Provider') === 'google' ? 'google' : 'discord';
-      const user = await identify(token, provider, env);
-      if (!user) return json({ error: `invalid ${provider} token` }, 401, env);
+      const user = await identify(token, env);
+      if (!user) return json({ error: 'invalid Google token' }, 401, env);
 
       const identityKey = playerKey(user);
       if (await rateLimited(identityKey, env)) return json({ error: 'slow down' }, 429, env);

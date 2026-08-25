@@ -1,24 +1,17 @@
 /**
  * Deployment configuration.
  *
- * Everything here is public — it ships to the browser. Never put a Discord
- * *client secret* in this file; the implicit OAuth2 flow used by the game does
- * not need one, which is exactly why it works on GitHub Pages.
+ * Everything here is public — it ships to the browser. A Google client ID is
+ * public information; the *client secret* is not, and is never needed here,
+ * which is exactly why this works on GitHub Pages.
  */
 
 export const CONFIG = {
   /**
-   * Discord application client ID.
-   * https://discord.com/developers/applications -> your app -> OAuth2.
-   * Leave empty to run the game in guest-only mode.
-   */
-  discordClientId: '',
-
-  /**
    * Google OAuth client ID (Web application).
    * https://console.cloud.google.com/apis/credentials
    * Authorise this site's origin under "Authorised JavaScript origins".
-   * Leave empty to hide Google sign-in.
+   * Leave empty to run the game in guest-only mode.
    */
   googleClientId: '',
 
@@ -35,24 +28,6 @@ export const CONFIG = {
   leaderboardLimit: 100,
 };
 
-/** Directory the game is served from, with a trailing slash. */
-export function baseUri() {
-  const { origin, pathname } = window.location;
-  return origin + pathname.replace(/(index|callback)\.html$/, '');
-}
-
-/**
- * The OAuth2 redirect URI. Discord requires an exact match, so the help panel
- * prints this string for copy-pasting into the developer portal.
- *
- * Both the popup flow and the redirect fallback land on callback.html, so there
- * is only ever one URI to register.
- */
-export function redirectUri() {
-  return baseUri() + 'callback.html';
-}
-
-const CLIENT_ID_KEY = 'rngdle_client_id';
 const GOOGLE_ID_KEY = 'rngdle_google_client_id';
 const ENDPOINT_KEY = 'rngdle_endpoint';
 
@@ -61,13 +36,12 @@ const ENDPOINT_KEY = 'rngdle_endpoint';
  * enable sign-in on a deployment they can't edit — and let you test auth on
  * localhost without touching this file.
  */
-export function saveOverrides({ discordClientId, googleClientId, leaderboardEndpoint }) {
+export function saveOverrides({ googleClientId, leaderboardEndpoint }) {
   const write = (key, value) => {
     if (value) localStorage.setItem(key, value);
     else localStorage.removeItem(key);
   };
   try {
-    write(CLIENT_ID_KEY, discordClientId);
     write(GOOGLE_ID_KEY, googleClientId);
     write(ENDPOINT_KEY, leaderboardEndpoint);
     return true;
@@ -84,18 +58,12 @@ export function clearOverrides() {
 export function overrides() {
   try {
     return {
-      discordClientId: localStorage.getItem(CLIENT_ID_KEY) || '',
       googleClientId: localStorage.getItem(GOOGLE_ID_KEY) || '',
       leaderboardEndpoint: localStorage.getItem(ENDPOINT_KEY) || '',
     };
   } catch {
-    return { discordClientId: '', googleClientId: '', leaderboardEndpoint: '' };
+    return { googleClientId: '', leaderboardEndpoint: '' };
   }
-}
-
-/** Discord snowflakes are 17-20 digit numbers. */
-export function isValidClientId(value) {
-  return /^\d{17,20}$/.test(value.trim());
 }
 
 /** Google web client IDs look like 1234-abc.apps.googleusercontent.com */

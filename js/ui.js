@@ -8,7 +8,7 @@ import { RANKS, describeRarity, DISTRIBUTION, SAMPLE_SIZE } from './ranks.js';
 
 export const el = (id) => document.getElementById(id);
 
-/** Local stand-in so guest rows don't fetch anything from Discord's CDN. */
+/** Local stand-in so guest rows fetch nothing from a remote avatar CDN. */
 const PLACEHOLDER_AVATAR =
   'data:image/svg+xml,' +
   encodeURIComponent(
@@ -21,27 +21,19 @@ const PLACEHOLDER_AVATAR =
  * Auth chip
  * ------------------------------------------------------------------ */
 
-const DISCORD_LOGO =
-  '<svg viewBox="0 0 24 18" aria-hidden="true" class="discord-logo"><path fill="currentColor" d="M20.3 1.6A19.8 19.8 0 0 0 15.4.1a14 14 0 0 0-.6 1.3 18.3 18.3 0 0 0-5.5 0A13.9 13.9 0 0 0 8.6.1a19.7 19.7 0 0 0-4.9 1.5C.6 6.2-.2 10.7.2 15.1a19.9 19.9 0 0 0 6 3 14.7 14.7 0 0 0 1.3-2.1 12.9 12.9 0 0 1-2-1c.2-.1.3-.2.5-.4a14.2 14.2 0 0 0 12.1 0l.5.4a12.9 12.9 0 0 1-2 1 14.5 14.5 0 0 0 1.2 2.1 19.8 19.8 0 0 0 6-3c.5-5.1-.8-9.6-3.5-13.5ZM8 12.4c-1.2 0-2.2-1.1-2.2-2.4S6.8 7.6 8 7.6s2.2 1.1 2.2 2.4-1 2.4-2.2 2.4Zm8 0c-1.2 0-2.2-1.1-2.2-2.4s1-2.4 2.2-2.4 2.2 1.1 2.2 2.4-1 2.4-2.2 2.4Z"/></svg>';
-
 /**
  * @param {object|null} session
  * @param {object} handlers
- * @param {Array}  handlers.providers   configured providers, e.g. [{id,label}]
- * @param {Function} handlers.mountProvider  (providerId, container) => void,
- *        used by providers that must render their own button (Google).
+ * @param {Function} handlers.mountButton  fills a host element with Google's
+ *        own rendered button, which their branding terms require.
  */
-export function renderAuth(
-  session,
-  { onLogin, onLogout, onReconnect, onSetup, mountProvider, providers = [], canReconnect, expiring },
-) {
+export function renderAuth(session, { onLogout, onSetup, mountButton, configured }) {
   const slot = el('auth-slot');
   slot.replaceChildren();
 
   if (session?.user) {
     const chip = document.createElement('div');
     chip.className = 'user-chip';
-    chip.classList.toggle('is-expiring', Boolean(expiring));
 
     const img = document.createElement('img');
     img.src = session.user.avatar || PLACEHOLDER_AVATAR;
@@ -51,83 +43,36 @@ export function renderAuth(
     img.addEventListener('error', () => {
       img.src = PLACEHOLDER_AVATAR;
     });
-    if (session.user.accent) img.style.borderColor = session.user.accent;
 
     const name = document.createElement('span');
     name.className = 'user-name';
     name.textContent = session.user.name;
-
-    const badge = document.createElement('span');
-    badge.className = 'provider-badge';
-    badge.textContent = session.provider === 'google' ? 'G' : 'D';
-    badge.title = `Signed in with ${session.provider === 'google' ? 'Google' : 'Discord'}`;
 
     const out = document.createElement('button');
     out.type = 'button';
     out.textContent = 'Sign out';
     out.addEventListener('click', onLogout);
 
-    chip.append(img, name, badge, out);
-
-    if (expiring) {
-      const renew = document.createElement('button');
-      renew.type = 'button';
-      renew.textContent = 'Renew';
-      renew.title = 'Your session expires soon';
-      renew.style.color = 'var(--gold)';
-      renew.addEventListener('click', onReconnect);
-      chip.append(renew);
-    }
-
+    chip.append(img, name, out);
     slot.append(chip);
     return;
   }
 
   // Nothing configured yet: offer the setup flow rather than a dead button.
-  if (!providers.length) {
+  if (!configured) {
     const setup = document.createElement('button');
     setup.className = 'setup-btn';
     setup.type = 'button';
-    setup.innerHTML = `${DISCORD_LOGO}<span>Set up sign-in</span>`;
+    setup.textContent = 'Set up sign-in';
     setup.addEventListener('click', onSetup);
     slot.append(setup);
     return;
   }
 
-  // Signed out, but this browser has signed in before: offer a one-click
-  // reconnect, which needs no consent screen.
-  if (canReconnect) {
-    const btn = document.createElement('button');
-    btn.className = 'reconnect-btn';
-    btn.type = 'button';
-    btn.innerHTML = '<span aria-hidden="true">\u21bb</span><span>Reconnect</span>';
-    btn.addEventListener('click', onReconnect);
-    slot.append(btn);
-  }
-
-  const row = document.createElement('div');
-  row.className = 'provider-row';
-
-  for (const provider of providers) {
-    if (provider.id === 'google') {
-      // Google requires their own rendered button, so give it a host element
-      // and let the provider fill it in.
-      const host = document.createElement('div');
-      host.className = 'google-host';
-      row.append(host);
-      mountProvider?.('google', host);
-      continue;
-    }
-
-    const btn = document.createElement('button');
-    btn.className = 'discord-btn';
-    btn.type = 'button';
-    btn.innerHTML = `${DISCORD_LOGO}<span>Sign in with Discord</span>`;
-    btn.addEventListener('click', () => onLogin(provider.id));
-    row.append(btn);
-  }
-
-  slot.append(row);
+  const host = document.createElement('div');
+  host.className = 'google-host';
+  slot.append(host);
+  mountButton(host);
 }
 
 /* ------------------------------------------------------------------ *

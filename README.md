@@ -3,8 +3,8 @@
 Roll a nine-digit number. Fifteen factors judge it. Find out how rare your luck really was.
 
 A static web game: slot-machine reels, a rarity-weighted scoring engine, a verifiable Daily Challenge,
-41 achievements, shareable cards, Google and Discord sign-in, and leaderboards — all running on GitHub
-Pages with no build step and no server.
+62 achievements, shareable cards, Google sign-in and leaderboards — all running on GitHub Pages with
+no build step and no server.
 
 ---
 
@@ -33,28 +33,40 @@ Improbability is deliberately blind to digit *order*, so the rest of the panel r
 runs, ascending and descending straights, palindromes, alternating patterns, arithmetic sequences,
 repeated halves, and trailing zeros. Each scales exponentially in the length of the pattern.
 
+### Alphabet and ordering
+
+Which digits you drew, and in what order: rolls made only of binary digits, only prime digits, all
+even or all odd; rolls that never decrease or never increase; `AABBCCDD` stutters; and straights that
+run through the 9-to-0 seam.
+
 ### Number theory and culture
 
-The nine digits are also read as a single integer — primes and perfect squares pay out — and scanned
-for a short list of numbers people care about for entirely unmathematical reasons.
+The nine digits are also read as a single integer. Primes, perfect squares, perfect cubes, powers of
+two, Fibonacci numbers and triangular numbers all pay out, scaled by how thin on the ground they are —
+there are only 44 Fibonacci numbers below a billion. The digits are also scanned for a short list of
+numbers people care about for entirely unmathematical reasons.
 
 ### Multipliers
 
-The **cosmic multiplier** is a second, independent roll (1x through 25x, heavily weighted toward 1x).
+The **cosmic multiplier** is a second, independent roll across thirteen tiers, from a 50%-likely 1x up
+to a 1-in-20,000 **100x**, heavily weighted toward the bottom.
 A **hot streak** multiplier builds while each roll beats the last, and a small **time bonus** applies
 at a few silly clock times.
 
 ## Ranks are real numbers, not vibes
 
-Ranks (F through Ω) are defined by **percentile**, not by hand-picked score thresholds:
+Fifteen tiers, defined by **percentile** rather than hand-picked score thresholds:
 
-| Rank | Percentile | Rank  | Percentile   |
-| ---- | ---------- | ----- | ------------ |
-| F    | bottom 40% | S     | top 3%       |
-| D    | 40–65%     | SS    | top 0.8%     |
-| C    | 65–82%     | SSS   | top 0.2%     |
-| B    | 82–92%     | ULTRA | top 0.05%    |
-| A    | 92–97%     | Ω     | top 0.005%   |
+| Rank | Percentile | Rank | Percentile |
+| --- | --- | --- | --- |
+| F | bottom 30% | S | top 3.5% |
+| E | 30–48% | S+ | top 1.5% |
+| D | 48–63% | SS | top 0.7% |
+| C | 63–76% | SSS | top 0.3% |
+| B | 76–86% | ULTRA | top 0.1% |
+| A | 86–93% | COSMIC | top 0.03% |
+| A+ | 93–96.5% | ETERNAL | top 0.005% |
+| | | Ω | top 0.001% |
 
 `tools/gen-percentiles.mjs` runs the scoring engine over **2,000,000 simulated rolls** and emits a
 quantile table (`js/percentiles.js`) — dense through the body of the distribution, logarithmic in the
@@ -64,12 +76,11 @@ Two consequences worth knowing:
 
 - **Rank bands are self-calibrating.** Retuning the scoring engine doesn't require re-picking
   thresholds — just regenerate the table.
-- **Nominal band widths aren't exactly attainable.** The score distribution is discrete and has large
-  atoms: the single score `18,984` (a near-pandigital roll with no other factors and a 1x multiplier)
-  is 0.16% of *all* rolls. A percentile boundary landing inside an atom cannot split it, so observed
-  band shares drift a little from nominal. `tools/verify.mjs` therefore asserts the property that
-  actually matters — that `percentileOf(s)` equals the true fraction of rolls scoring below `s` — and
-  reports band shares as information only.
+- **Nominal band widths aren't exactly attainable.** The score distribution is discrete, so a
+  percentile boundary landing inside an atom of identical scores cannot split it. `tools/verify.mjs`
+  therefore asserts the property that actually matters — that `percentileOf(s)` equals the true
+  fraction of rolls scoring below `s` — and reports band shares as information only. (They currently
+  land within a few percent of nominal across all fifteen tiers.)
 
 ## Daily Challenge
 
@@ -84,7 +95,7 @@ Two things follow from that:
 - **You cannot reroll it.** Refreshing, clearing storage or opening a different browser all reproduce
   the same digits. The button locks to `PLAYED` with a countdown to the next one.
 - **It is the one mode a server can fully verify.** The Worker recomputes your roll from your
-  authenticated Discord ID and the date, and ignores whatever digits the client sent. A Daily
+  authenticated Google account ID and the date, and ignores whatever digits the client sent. A Daily
   submission cannot claim a roll you didn't get.
 
 The derivation is public, so you can compute future days in advance. That's harmless — knowing
@@ -99,10 +110,13 @@ mode exactly.
 
 ## Achievements
 
-41 of them, evaluated after every roll and stored locally: rank milestones, score milestones, pattern
-finds (palindromes, straights, primes, perfect squares), the cultural numbers, multiplier and streak
-feats, and Daily streaks. Six are secret and stay masked in the list until earned. Unlocks arrive as
-toasts.
+62 of them, evaluated after every roll and stored per account: rank milestones across all fifteen
+tiers, score milestones, pattern finds, the digit-alphabet and ordering rarities, number-theory
+curiosities, the cultural numbers, multiplier and streak feats, and Daily streaks. Eleven are secret
+and stay masked until earned. Unlocks arrive as toasts.
+
+Every one is reachable — a test sweeps millions of simulated rolls and reports any achievement that
+never fires, which catches both unsatisfiable predicates and factor-name typos.
 
 ## Sharing
 
@@ -138,26 +152,17 @@ There is no build step. `.nojekyll` is present so paths beginning with `_` are s
 
 ## Signing in
 
-Two providers, either or both. Both are browser-only flows, which is what makes them work on a static
-host — no token exchange, no client secret, no server.
-
-| | Google | Discord |
-| --- | --- | --- |
-| Mechanism | Identity Services (signed JWT ID token) | OAuth2 implicit grant |
-| You register | an **authorised JavaScript origin** | an **exact redirect URL** |
-| Token life | ~1 hour, silently renewed | 7 days, renewable with `prompt=none` |
-| Server verification | RS256 signature against Google's public keys | token checked against the Discord API |
+Sign-in uses **Google Identity Services**, which hands the browser a signed JWT ID token directly. No
+token exchange, no client secret, no server — which is what lets it work on a static host.
 
 Every "Sign in with…" button on the web requires the site owner to register an OAuth client first;
-there is no provider that skips this. Google's is the more forgiving of the two, because it authorises
-an origin rather than an exact path.
+there is no provider that skips this. Google's is the more forgiving kind, because it authorises an
+**origin** rather than an exact redirect path.
 
-### Quickest route
+### Setup
 
-Open the game and press **Set up sign-in** in the top right. The dialog prints the exact origin and
-redirect URL for wherever the game is running, with copy buttons, and takes the client IDs.
-
-### Google
+Open the game and press **Set up sign-in** in the top right — the dialog prints the exact origin to
+authorise, with a copy button, and takes the client ID. Behind it:
 
 1. In [Google Cloud → Credentials](https://console.cloud.google.com/apis/credentials), create an
    **OAuth client ID** of type **Web application**.
@@ -165,42 +170,24 @@ redirect URL for wherever the game is running, with copy buttons, and takes the 
    no redirect URI to add.
 3. Put the client ID (`…apps.googleusercontent.com`) into `js/config.js` as `googleClientId`.
 
-### Discord
-
-1. Create an application at <https://discord.com/developers/applications>.
-2. **OAuth2 → Redirects**, add exactly `https://<you>.github.io/<repo>/callback.html`, then Save Changes.
-3. Put the **Client ID** into `js/config.js` as `discordClientId`.
-
-Only the `identify` scope is requested — username and avatar.
-
-Sign-in happens in a **popup** for Discord, so the page and the roll you're looking at are never torn
-down by a navigation; if the popup is blocked it falls back to a redirect. Both routes land on
-`callback.html`, so there is only ever one redirect URI to register. Google renders its own button, as
-their branding terms require.
+Settings entered in the dialog are per-browser, which suits trying it out. To enable sign-in for
+**everyone** who visits, put the value in `js/config.js` and redeploy. A client ID is public — it ships
+to the browser either way. The thing you must never commit is the client *secret*, which this flow
+never uses.
 
 ### Session handling
 
-- Tokens are stored in `localStorage` and scrubbed from the address bar immediately on return; the
-  OAuth `state` parameter is generated and checked on the way back.
-- Google ID tokens expire in about an hour, so **identity and token lifetimes are tracked separately**.
-  Your profile stays signed in for 30 days locally — re-prompting hourly just to look at your own roll
-  history would be obnoxious — while the leaderboard silently renews the token before submitting a
-  score, since that's the only place a fresh token actually matters.
-- Discord tokens last seven days and cannot be refreshed, so within 12 hours of expiry the chip shows
-  a **Renew** button, and a browser that has signed in before gets **Reconnect** rather than a cold
-  prompt. Both use `prompt=none`, so returning users re-auth with no consent screen.
-- A `401` from the leaderboard triggers one silent re-auth and a retry.
-
-Settings entered in the in-app dialog are per-browser, which suits trying it out. To enable sign-in for
-**everyone** who visits, put the same values in `js/config.js` and redeploy. A client ID is public — it
-ships to the browser either way. The thing you must never commit is a client *secret*, and neither
-flow here uses one.
+Google ID tokens expire in about an hour, so **identity and token lifetimes are tracked separately**.
+Your profile stays signed in for 30 days locally — re-prompting hourly just to look at your own roll
+history would be obnoxious — while the leaderboard silently renews the token before submitting a
+score, since that's the only place a fresh token actually matters. A `401` triggers one silent re-auth
+and a retry.
 
 ## What signing in gets you
 
 Roll history, achievements and the Daily streak are stored **per identity**, namespaced by player key
-(`rngdle_history::google:1098765…`). Identity is `provider:id`, so a Google subject and a Discord
-snowflake can never collide. Signing in therefore swaps the whole profile rather than just
+(`rngdle_history::google:1098765…`). The `google:` prefix is deliberate — it keeps the namespace open
+so a second provider could never collide with existing identities. Signing in therefore swaps the whole profile rather than just
 changing the name on the leaderboard, and two people sharing a browser never see each other's
 progress.
 
@@ -222,8 +209,8 @@ For a **shared** leaderboard, deploy the Cloudflare Worker in `worker/`:
 ```bash
 cd worker
 npx wrangler kv namespace create RNGDLE   # paste the id into wrangler.toml
-# Required if you accept Google sign-ins, so tokens minted for other sites are rejected:
-#   set GOOGLE_CLIENT_ID in wrangler.toml
+# REQUIRED — set GOOGLE_CLIENT_ID in wrangler.toml, or tokens minted for any
+# other site would be accepted here.
 npx wrangler deploy
 ```
 
@@ -233,9 +220,8 @@ Then set the endpoint in `js/config.js`:
 leaderboardEndpoint: 'https://rngdle-leaderboard.<your-subdomain>.workers.dev',
 ```
 
-The Worker verifies the bearer token — Discord tokens against the Discord API, Google ID tokens by
-checking the RS256 signature against Google's published keys plus issuer, audience and expiry — then
-rate-limits submissions, and keeps one personal-best row
+The Worker verifies every ID token by checking its RS256 signature against Google's published keys,
+plus issuer, audience and expiry, then rate-limits submissions, and keeps one personal-best row
 per player on the all-time board plus one row per player per day on the Daily board (kept ~40 days).
 
 ### Channel announcements
@@ -252,8 +238,8 @@ npx wrangler secret put ANNOUNCE_WEBHOOK      # a channel webhook URL
 
 ### Trust model — please read before deploying the Worker
 
-**The Daily board is fully verified.** The roll is a pure function of the UTC date and your Discord
-user ID, so the Worker recomputes it and ignores the client's claims entirely. It cannot be faked and
+**The Daily board is fully verified.** The roll is a pure function of the UTC date and your Google
+account ID, so the Worker recomputes it and ignores the client's claims entirely. It cannot be faked and
 cannot be rerolled.
 
 **The all-time board is not, and cannot be on a static front end.** The endless roll happens in the
@@ -269,7 +255,6 @@ the Worker and have the client request a roll rather than report one.
 
 ```
 index.html                  markup and DOM contract
-callback.html               OAuth2 landing page (popup + redirect, one URI)
 styles.css                  all visuals and animation
 js/scoring.js               the scoring engine — pure, runs in browser and Node alike
 js/percentiles.js           GENERATED quantile table
@@ -280,8 +265,7 @@ js/share.js                 PNG share card and Discord text
 js/reels.js                 slot-machine reel mechanics
 js/fx.js                    starfield, particle bursts, count-up, screen shake
 js/audio.js                 synthesised sound (no audio files)
-js/auth.js                  provider-agnostic sign-in facade and session store
-js/discord.js               OAuth2 implicit grant, popup flow, redirect fallback
+js/auth.js                  sign-in facade and session store
 js/google.js                Google Identity Services, JWT ID tokens
 js/profile.js               per-identity storage and guest adoption
 js/leaderboard.js           local and remote board adapters, both scopes

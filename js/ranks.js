@@ -41,16 +41,33 @@ export function percentileOf(score) {
 
 export const RANKS = [
   { id: 'f', label: 'F', name: 'Statistical Noise', min: 0, color: '#6b7280' },
-  { id: 'd', label: 'D', name: 'Unremarkable', min: 0.4, color: '#78716c' },
-  { id: 'c', label: 'C', name: 'Passable', min: 0.65, color: '#4ade80' },
-  { id: 'b', label: 'B', name: 'Respectable', min: 0.82, color: '#38bdf8' },
-  { id: 'a', label: 'A', name: 'Excellent', min: 0.92, color: '#a78bfa' },
-  { id: 's', label: 'S', name: 'Extraordinary', min: 0.97, color: '#fbbf24' },
-  { id: 'ss', label: 'SS', name: 'Legendary', min: 0.992, color: '#fb7185' },
-  { id: 'sss', label: 'SSS', name: 'Mythic', min: 0.998, color: '#f472b6' },
-  { id: 'ultra', label: 'ULTRA', name: 'Beyond Reason', min: 0.9995, color: '#22d3ee' },
-  { id: 'omega', label: 'Ω', name: 'Reality Error', min: 0.99995, color: '#ffffff' },
+  { id: 'e', label: 'E', name: 'Forgettable', min: 0.3, color: '#78716c' },
+  { id: 'd', label: 'D', name: 'Unremarkable', min: 0.48, color: '#a8a29e' },
+  { id: 'c', label: 'C', name: 'Passable', min: 0.63, color: '#4ade80' },
+  { id: 'b', label: 'B', name: 'Respectable', min: 0.76, color: '#38bdf8' },
+  { id: 'a', label: 'A', name: 'Excellent', min: 0.86, color: '#a78bfa' },
+  { id: 'aplus', label: 'A+', name: 'Exceptional', min: 0.93, color: '#8b5cf6' },
+  { id: 's', label: 'S', name: 'Extraordinary', min: 0.965, color: '#fbbf24' },
+  { id: 'splus', label: 'S+', name: 'Phenomenal', min: 0.985, color: '#f59e0b' },
+  { id: 'ss', label: 'SS', name: 'Legendary', min: 0.993, color: '#fb7185' },
+  { id: 'sss', label: 'SSS', name: 'Mythic', min: 0.997, color: '#f472b6' },
+  { id: 'ultra', label: 'ULTRA', name: 'Beyond Reason', min: 0.999, color: '#22d3ee' },
+  { id: 'cosmic', label: 'COSMIC', name: 'Cosmic Anomaly', min: 0.9997, color: '#818cf8' },
+  { id: 'eternal', label: 'ETERNAL', name: 'Eternal', min: 0.99995, color: '#e879f9' },
+  { id: 'omega', label: 'Ω', name: 'Reality Error', min: 0.99999, color: '#ffffff' },
 ];
+
+/**
+ * How hard to celebrate, 0-3. Derived from position in the ladder rather than
+ * hard-coded indices, so adding tiers doesn't silently retune the fireworks.
+ */
+export function celebration(rankIndex) {
+  if (rankIndex >= 11) return 3; // ULTRA and beyond
+  if (rankIndex >= 9) return 2; // SS, SSS
+  if (rankIndex >= 7) return 1; // S, S+
+  if (rankIndex >= 6) return 0.5; // A+
+  return 0;
+}
 
 export function rankFor(percentile) {
   let rank = RANKS[0];

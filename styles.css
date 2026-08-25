@@ -161,31 +161,26 @@ body {
   transform: translateY(-1px);
 }
 
-.discord-btn {
+.primary-btn {
   display: inline-flex;
   align-items: center;
   gap: 9px;
-  padding: 9px 15px;
+  padding: 10px 20px;
   border-radius: 11px;
-  border: 1px solid rgba(88, 101, 242, 0.55);
-  background: linear-gradient(180deg, #5865f2, #4752c4);
-  color: #fff;
-  font-weight: 650;
+  border: 1px solid rgba(110, 231, 255, 0.5);
+  background: linear-gradient(180deg, var(--accent), #2bb8dd);
+  color: #04121a;
+  font-weight: 750;
   font-size: 14px;
   cursor: pointer;
-  box-shadow: 0 6px 20px -8px #5865f2;
+  box-shadow: 0 6px 20px -10px var(--accent);
   transition: transform 0.15s, box-shadow 0.2s, filter 0.2s;
 }
 
-.discord-btn:hover {
+.primary-btn:hover {
   transform: translateY(-1px);
-  filter: brightness(1.08);
-  box-shadow: 0 10px 26px -8px #5865f2;
-}
-
-.discord-logo {
-  width: 20px;
-  height: 15px;
+  filter: brightness(1.06);
+  box-shadow: 0 10px 26px -10px var(--accent);
 }
 
 .user-chip {
@@ -270,6 +265,7 @@ body {
 }
 
 .stage {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -505,8 +501,81 @@ body {
   filter: brightness(1.06);
 }
 
-.roll-btn:active:not(:disabled) {
-  transform: translateY(2px) scale(0.985);
+/* Pressed: sink into the page and collapse the drop shadow, so the travel
+   reads as the button physically moving rather than just tinting. */
+.roll-btn.is-pressed:not(:disabled) {
+  transform: translateY(5px) scale(0.965);
+  filter: brightness(0.95);
+  box-shadow:
+    0 2px 8px -6px var(--accent),
+    inset 0 3px 10px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.25);
+  transition-duration: 0.05s;
+}
+
+/* Idle invitation: a slow breath that stops the moment it is pressed. */
+.roll-btn:not(:disabled):not(.is-pressed) {
+  animation: roll-breathe 3.4s ease-in-out infinite;
+}
+
+@keyframes roll-breathe {
+  0%,
+  100% {
+    box-shadow:
+      0 14px 34px -14px var(--accent),
+      inset 0 -3px 0 rgba(0, 0, 0, 0.22),
+      inset 0 2px 0 rgba(255, 255, 255, 0.45);
+  }
+  50% {
+    box-shadow:
+      0 18px 44px -14px var(--accent),
+      0 0 26px -8px var(--accent),
+      inset 0 -3px 0 rgba(0, 0, 0, 0.22),
+      inset 0 2px 0 rgba(255, 255, 255, 0.45);
+  }
+}
+
+/* The button face is bright cyan, so the ripple darkens rather than lightens —
+   a white ripple is invisible against it. */
+.ripple {
+  position: absolute;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(2, 24, 36, 0.42), rgba(2, 24, 36, 0));
+  pointer-events: none;
+  transform: scale(0);
+  animation: ripple-out 0.55s cubic-bezier(0.2, 0.7, 0.3, 1) forwards;
+}
+
+@keyframes ripple-out {
+  to {
+    transform: scale(1);
+    opacity: 0;
+  }
+}
+
+.shockwave {
+  position: absolute;
+  width: 40px;
+  height: 40px;
+  margin: -20px 0 0 -20px;
+  border-radius: 50%;
+  border: 3px solid var(--accent);
+  box-shadow: 0 0 18px -2px var(--accent);
+  opacity: 0.85;
+  pointer-events: none;
+  z-index: 2;
+  animation: shockwave-out 0.62s cubic-bezier(0.15, 0.75, 0.3, 1) forwards;
+}
+
+@keyframes shockwave-out {
+  to {
+    width: 340px;
+    height: 340px;
+    margin: -170px 0 0 -170px;
+    opacity: 0;
+    border-width: 1px;
+    box-shadow: 0 0 0 rgba(0, 0, 0, 0);
+  }
 }
 
 .roll-btn:disabled {
@@ -582,7 +651,17 @@ body {
 
 .verdict-rank[data-len='5'] {
   font-size: 19px;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.04em;
+}
+
+.verdict-rank[data-len='6'] {
+  font-size: 16px;
+  letter-spacing: 0.03em;
+}
+
+.verdict-rank[data-len='7'] {
+  font-size: 14px;
+  letter-spacing: 0.02em;
 }
 
 .verdict-rank.is-stamping {
@@ -1194,30 +1273,6 @@ body {
 
 /* ---------------- Reconnect chip ---------------- */
 
-.reconnect-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 9px 15px;
-  border-radius: 11px;
-  border: 1px solid rgba(255, 200, 87, 0.5);
-  background: rgba(255, 200, 87, 0.12);
-  color: #ffe4a8;
-  font-weight: 650;
-  font-size: 13.5px;
-  cursor: pointer;
-  transition: background 0.2s, transform 0.15s;
-}
-
-.reconnect-btn:hover {
-  background: rgba(255, 200, 87, 0.2);
-  transform: translateY(-1px);
-}
-
-.user-chip.is-expiring {
-  border-color: rgba(255, 200, 87, 0.5);
-}
-
 /* ---------------- Achievements ---------------- */
 
 .awards-progress {
@@ -1472,9 +1527,9 @@ body {
   gap: 8px;
   padding: 9px 15px;
   border-radius: 11px;
-  border: 1px dashed rgba(88, 101, 242, 0.7);
-  background: rgba(88, 101, 242, 0.14);
-  color: #c3c9ff;
+  border: 1px dashed rgba(110, 231, 255, 0.6);
+  background: rgba(110, 231, 255, 0.12);
+  color: #bfeeff;
   font-weight: 650;
   font-size: 13.5px;
   cursor: pointer;
@@ -1482,18 +1537,11 @@ body {
 }
 
 .setup-btn:hover {
-  background: rgba(88, 101, 242, 0.24);
+  background: rgba(110, 231, 255, 0.2);
   transform: translateY(-1px);
 }
 
 /* ---------------- Multi-provider sign-in ---------------- */
-
-.provider-row {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  flex-wrap: wrap;
-}
 
 /* Google renders its own button here; reserve the space so the top bar
    doesn't jump while GIS loads. */
@@ -1509,19 +1557,6 @@ body {
   color: var(--muted);
   max-width: 220px;
   line-height: 1.35;
-}
-
-.provider-badge {
-  display: grid;
-  place-items: center;
-  width: 18px;
-  height: 18px;
-  border-radius: 5px;
-  font-size: 10px;
-  font-weight: 800;
-  color: var(--muted);
-  background: rgba(255, 255, 255, 0.08);
-  flex: 0 0 auto;
 }
 
 .dialog .hint {

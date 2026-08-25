@@ -2,7 +2,7 @@
  * Leaderboard with two interchangeable backends:
  *
  *   LocalBoard   — localStorage, always available, per-device.
- *   RemoteBoard  — a shared HTTP endpoint (see worker/), gated on Discord auth.
+ *   RemoteBoard  — a shared HTTP endpoint (see worker/), gated on sign-in.
  *
  * Both expose the same { list, submit } interface so the UI doesn't care which
  * one is active, and both support two scopes: the all-time board and the
@@ -77,7 +77,7 @@ const LocalBoard = {
 };
 
 /**
- * Re-labels a guest's local rows under their Discord identity, so signing in
+ * Re-labels a guest's local rows under their account identity, so signing in
  * doesn't look like it wiped your board. Merges into an existing row if the
  * player already has one, keeping whichever score is higher.
  */
@@ -126,7 +126,6 @@ function remoteBoard(endpoint) {
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${session.token}`,
-        'X-Auth-Provider': session.provider,
       },
       body: JSON.stringify(body),
     });

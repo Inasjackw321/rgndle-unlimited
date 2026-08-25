@@ -32,15 +32,8 @@
         </button>
         <button id="help-btn" class="icon-btn" type="button" title="How scoring works">?</button>
         <div id="auth-slot" class="auth-slot">
-          <button id="login-btn" class="discord-btn" type="button">
-            <svg viewBox="0 0 24 18" aria-hidden="true" class="discord-logo">
-              <path
-                fill="currentColor"
-                d="M20.3 1.6A19.8 19.8 0 0 0 15.4.1a14 14 0 0 0-.6 1.3 18.3 18.3 0 0 0-5.5 0A13.9 13.9 0 0 0 8.6.1a19.7 19.7 0 0 0-4.9 1.5C.6 6.2-.2 10.7.2 15.1a19.9 19.9 0 0 0 6 3 14.7 14.7 0 0 0 1.3-2.1 12.9 12.9 0 0 1-2-1c.2-.1.3-.2.5-.4a14.2 14.2 0 0 0 12.1 0l.5.4a12.9 12.9 0 0 1-2 1 14.5 14.5 0 0 0 1.2 2.1 19.8 19.8 0 0 0 6-3c.5-5.1-.8-9.6-3.5-13.5ZM8 12.4c-1.2 0-2.2-1.1-2.2-2.4S6.8 7.6 8 7.6s2.2 1.1 2.2 2.4-1 2.4-2.2 2.4Zm8 0c-1.2 0-2.2-1.1-2.2-2.4s1-2.4 2.2-2.4 2.2 1.1 2.2 2.4-1 2.4-2.2 2.4Z"
-              />
-            </svg>
-            <span>Sign in with Discord</span>
-          </button>
+          <!-- Filled in by ui.renderAuth: Google's rendered button, the signed-in
+               chip, or the setup prompt when no client ID is configured. -->
         </div>
       </div>
     </header>
@@ -147,42 +140,32 @@
       <article>
         <h2>Set up sign-in</h2>
         <p>
-          Sign-in needs an OAuth client ID. Every &ldquo;Sign in with&hellip;&rdquo; button on the web works this
-          way &mdash; the site owner registers an app with the provider first. Nothing secret is involved: a
-          client ID is public, which is why this game needs no server. Set up either provider, or both.
+          Sign-in needs a Google OAuth client ID. Every &ldquo;Sign in with&hellip;&rdquo; button on the web
+          works this way &mdash; the site owner registers an app with the provider first. Nothing secret is
+          involved: a client ID is public, which is why this game needs no server.
         </p>
 
-        <h3>Google</h3>
+        <h3>1. Create the client ID</h3>
         <p>
           In
           <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer"
             >Google Cloud &rarr; Credentials</a
-          >, create an <strong>OAuth client ID</strong> of type <strong>Web application</strong>. Under
-          <strong>Authorised JavaScript origins</strong>, add this origin:
+          >, choose <strong>Create credentials &rarr; OAuth client ID</strong>, and pick the
+          <strong>Web application</strong> type.
         </p>
+
+        <h3>2. Authorise this origin</h3>
+        <p>Under <strong>Authorised JavaScript origins</strong>, add exactly this, then press Create:</p>
         <div class="copy-field">
           <code id="setup-origin"></code>
           <button type="button" class="share-btn" id="copy-origin">Copy</button>
         </div>
         <p class="hint">
-          Google authorises an origin, not a full URL &mdash; there is no redirect path to get wrong. You do
-          not need to add a redirect URI.
+          Google authorises an origin, not a full URL &mdash; there is no redirect path to get wrong, and no
+          redirect URI to add.
         </p>
 
-        <h3>Discord</h3>
-        <p>
-          In the
-          <a href="https://discord.com/developers/applications" target="_blank" rel="noopener noreferrer"
-            >Discord developer portal</a
-          >, press <strong>New Application</strong>, then under <strong>OAuth2 &rarr; Redirects</strong> add
-          this exact URL and press Save Changes:
-        </p>
-        <div class="copy-field">
-          <code id="setup-redirect"></code>
-          <button type="button" class="share-btn" id="copy-redirect">Copy</button>
-        </div>
-
-        <h3>Paste your client IDs</h3>
+        <h3>3. Paste the client ID</h3>
         <form id="setup-form">
           <label class="field">
             <span>Google client ID</span>
@@ -192,17 +175,6 @@
               autocomplete="off"
               spellcheck="false"
               placeholder="123456-abc.apps.googleusercontent.com"
-            />
-          </label>
-          <label class="field">
-            <span>Discord client ID</span>
-            <input
-              id="setup-client-id"
-              type="text"
-              inputmode="numeric"
-              autocomplete="off"
-              spellcheck="false"
-              placeholder="1234567890123456789"
             />
           </label>
           <label class="field">
@@ -220,7 +192,7 @@
           </label>
           <p class="field-error" id="setup-error" hidden></p>
           <div class="setup-actions">
-            <button type="submit" class="discord-btn">Save</button>
+            <button type="submit" class="primary-btn">Save</button>
             <button type="button" class="share-btn" id="setup-clear">Clear</button>
           </div>
         </form>
