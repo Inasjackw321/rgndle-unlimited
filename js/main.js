@@ -91,9 +91,18 @@ async function refreshBoard() {
   const meId = playerId();
   try {
     const entries = await board.listTop(state.scope);
-    ui.renderBoard(entries, meId, { shared: board.isShared(), scope: state.scope });
+    ui.renderBoard(entries, meId, {
+      shared: board.isShared(),
+      scope: state.scope,
+      onConnect: () => openSetup({ focus: 'endpoint' }),
+    });
   } catch (err) {
-    ui.renderBoard([], meId, { shared: board.isShared(), scope: state.scope, error: err.message });
+    ui.renderBoard([], meId, {
+      shared: board.isShared(),
+      scope: state.scope,
+      error: err.message,
+      onConnect: () => openSetup({ focus: 'endpoint' }),
+    });
   }
 }
 
@@ -360,14 +369,21 @@ function setupSetupDialog() {
 
   ui.el('setup-origin').textContent = jsOrigin();
 
-  const open = () => {
+  const open = ({ focus = 'client' } = {}) => {
     const current = overrides();
     const active = resolved();
     googleIdInput.value = current.googleClientId || active.googleClientId || '';
     endpointInput.value = current.leaderboardEndpoint || active.leaderboardEndpoint || '';
     error.hidden = true;
     dialog.showModal();
-    googleIdInput.focus();
+
+    if (focus === 'endpoint') {
+      // Arrived from "Play against everyone" — start where that answer lives.
+      ui.el('shared-board-heading').scrollIntoView({ block: 'start' });
+      endpointInput.focus();
+    } else {
+      googleIdInput.focus();
+    }
   };
 
   ui.el('open-setup').addEventListener('click', () => {
@@ -409,8 +425,10 @@ function setupSetupDialog() {
     const googleId = googleIdInput.value.trim();
     const endpoint = endpointInput.value.trim();
 
-    if (!googleId) return fail('Paste your Google client ID to enable sign-in.', googleIdInput);
-    if (!isValidGoogleClientId(googleId)) {
+    if (!googleId && !endpoint) {
+      return fail('Paste a Google client ID, a leaderboard endpoint, or both.', googleIdInput);
+    }
+    if (googleId && !isValidGoogleClientId(googleId)) {
       return fail(
         'That does not look like a Google client ID. It ends in .apps.googleusercontent.com — copy the Client ID, not the client secret.',
         googleIdInput,
@@ -426,6 +444,7 @@ function setupSetupDialog() {
     dialog.close();
     setupHelpText();
     paintAuth(auth.currentSession());
+    refreshBoard();
   });
 
   return { open };

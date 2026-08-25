@@ -183,8 +183,23 @@
               placeholder="123456-abc.apps.googleusercontent.com"
             />
           </label>
+
+          <h3 id="shared-board-heading">Playing against everyone</h3>
+          <p>
+            Out of the box the leaderboard lives in your browser, so only you appear on it. A shared board
+            needs somewhere to store scores. The code is already in this repo &mdash; deploy it and paste the
+            URL below:
+          </p>
+          <pre class="snippet"><code>cd worker
+npx wrangler kv namespace create GUSSLE
+<span class="snippet-note"># paste the returned id into wrangler.toml</span>
+npx wrangler deploy</code></pre>
+          <p class="hint">
+            Free tier is plenty. <code>GOOGLE_CLIENT_ID</code> in <code>wrangler.toml</code> must match the
+            client ID above, or the Worker rejects every sign-in.
+          </p>
           <label class="field">
-            <span>Leaderboard endpoint <em>(optional)</em></span>
+            <span>Leaderboard endpoint</span>
             <!-- Deliberately type=text: type=url hands validation to the browser,
                  whose native bubble bypasses the in-dialog error message. -->
             <input

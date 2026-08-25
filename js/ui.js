@@ -193,19 +193,33 @@ function emptyState(text) {
   return li;
 }
 
-export function renderBoard(entries, meId, { shared, error, scope = 'all' }) {
+export function renderBoard(entries, meId, { shared, error, scope = 'daily', onConnect }) {
   const list = el('board');
   const note = el('board-note');
   list.replaceChildren();
+  note.replaceChildren();
 
-  if (scope === 'daily') {
-    note.textContent = shared
-      ? "Today's board. Everyone played the same target."
-      : "Today's board, stored on this device.";
+  if (shared) {
+    note.textContent =
+      scope === 'daily'
+        ? "Today's board. Everyone played the same target."
+        : 'Best single day, per player, all time.';
   } else {
-    note.textContent = shared
-      ? 'Best single day, per player, all time.'
-      : 'Your best day so far. Configure a leaderboard endpoint to play against everyone else.';
+    // Be explicit that this board is solo. "Nobody has played today yet" reads
+    // as though other people exist and simply haven't played, when in fact
+    // nobody else can ever appear on a board held in this browser.
+    const line = document.createElement('div');
+    line.textContent = 'Only you can appear here — this board lives in your browser.';
+    note.append(line);
+
+    if (onConnect) {
+      const cta = document.createElement('button');
+      cta.type = 'button';
+      cta.className = 'connect-btn';
+      cta.innerHTML = '<span aria-hidden="true">🌍</span><span>Play against everyone</span>';
+      cta.addEventListener('click', onConnect);
+      note.append(cta);
+    }
   }
 
   if (error) {
@@ -214,7 +228,13 @@ export function renderBoard(entries, meId, { shared, error, scope = 'all' }) {
   }
   if (!entries.length) {
     list.append(
-      emptyState(scope === 'daily' ? 'Nobody has played today yet.' : 'No days played yet.'),
+      emptyState(
+        shared
+          ? scope === 'daily'
+            ? 'Nobody has played today yet.'
+            : 'No days played yet.'
+          : "You haven't finished today's target yet.",
+      ),
     );
     return;
   }

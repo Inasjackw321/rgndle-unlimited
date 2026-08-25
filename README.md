@@ -159,10 +159,13 @@ is a browser test for it.
 
 ## Leaderboard
 
-By default the boards live in `localStorage` — today's board and your best day ever, per device, no
-setup.
+By default the boards live in `localStorage` — today's board and your best day ever, per device. The
+panel says so plainly, because a solo board that says "nobody has played today yet" reads as though
+other people exist and simply haven't shown up.
 
-For **shared** boards, deploy the Cloudflare Worker in `worker/`:
+To see everyone else you need somewhere to store scores. Deploy the Cloudflare Worker in `worker/`,
+then paste its URL into **Play against everyone** in the leaderboard panel (or set
+`leaderboardEndpoint` in `js/config.js` to turn it on for every visitor):
 
 ```bash
 cd worker
@@ -171,7 +174,12 @@ npx wrangler kv namespace create GUSSLE   # paste the id into wrangler.toml
 npx wrangler deploy
 ```
 
-Then set the endpoint in `js/config.js` as `leaderboardEndpoint`.
+Sign-in is not required to *read* a shared board, only to post to it.
+
+The whole shared path is covered by a test that runs the real `worker/src/index.js` in Node against an
+in-memory KV, with Google's JWKS served from a locally generated key so the Worker's actual RS256
+verification runs. It drives the browser against that: several players appear on the board, ranked
+correctly, with your own row highlighted.
 
 ### Channel announcements
 

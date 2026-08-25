@@ -1850,3 +1850,48 @@ body {
   font-size: 12.5px !important;
   color: var(--muted) !important;
 }
+
+/* ---------------- Shared-board call to action ---------------- */
+
+.connect-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 9px;
+  padding: 7px 13px;
+  border-radius: 9px;
+  border: 1px solid rgba(110, 231, 255, 0.45);
+  background: rgba(110, 231, 255, 0.12);
+  color: #bfeeff;
+  font-size: 12.5px;
+  font-weight: 650;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.15s;
+}
+
+.connect-btn:hover {
+  background: rgba(110, 231, 255, 0.22);
+  transform: translateY(-1px);
+}
+
+.snippet {
+  margin: 10px 0 0;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--panel-line);
+  background: rgba(0, 0, 0, 0.4);
+  overflow-x: auto;
+}
+
+.snippet code {
+  background: none;
+  padding: 0;
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: #bfeeff;
+  white-space: pre;
+}
+
+.snippet-note {
+  color: var(--muted);
+}
