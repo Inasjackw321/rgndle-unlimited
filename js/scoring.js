@@ -49,6 +49,19 @@ export const DISTANCE_WEIGHTS = (() => {
   return counts.map((c) => c / 10); // [0.1, 0.2, 0.2, 0.2, 0.2, 0.1]
 })();
 
+/**
+ * What an unseen digit is worth on average — 223 points.
+ *
+ * This is the number a re-roll buys you, so the UI shows it next to what the
+ * digit in front of you is worth. It states the trade rather than resolving it:
+ * the budget and the end-of-day bonus for unspent re-rolls are still yours to
+ * weigh, which is the whole game.
+ */
+export const AVERAGE_DIGIT_POINTS = DIGIT_POINTS.reduce(
+  (sum, points, d) => sum + points * DISTANCE_WEIGHTS[d],
+  0,
+);
+
 /* ------------------------------------------------------------------ *
  * Pattern helpers over the *distances*, which is what the game is about
  * ------------------------------------------------------------------ */

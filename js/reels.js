@@ -141,7 +141,9 @@ export function setDelta(i, value) {
     lane.delta.removeAttribute('data-d');
     return;
   }
-  lane.delta.textContent = value === 0 ? '✓' : `+${value}`;
+  // Plain number, not "+3": under a row labelled OFF BY a leading plus reads as
+  // a bonus, and this row is the one place in the game that isn't points.
+  lane.delta.textContent = value === 0 ? '✓' : String(value);
   lane.delta.dataset.d = String(value);
 }
 

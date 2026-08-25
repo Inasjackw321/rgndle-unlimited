@@ -18,6 +18,10 @@ Re-rolls don't come back until tomorrow, and an unspent one is worth points at t
 whole game: a mediocre digit on lane one is usually worth keeping, while the same digit on lane nine
 is worth burning a re-roll on. Judging the middle is the interesting part.
 
+The two buttons state the trade in the only unit that matters — **Keep +150** against **a re-roll
+averages +223** (the expected value of an unseen digit). That isn't advice: an unspent re-roll is
+worth 250 at the end and there are only three, so the arithmetic still doesn't decide for you.
+
 ### Test mode
 
 `testMode` in `js/config.js` is currently **on**, which lifts the one-game-per-day limit: finishing a
@@ -114,11 +118,25 @@ hand is what left 768px overflowing.
 is a `calc()` now — `getPropertyValue` hands back the unresolved expression, and the resulting NaN
 silently parked every phone reel half a digit off.
 
-On phones the control bar is fixed to the bottom of the viewport, so the roll button stays reachable
-while you scroll through the verdict — with the page reserving the height it no longer takes in flow,
-and achievement toasts stacking above it rather than on top of it. Not `position: sticky`: `bottom: 0`
-sticky pins a box that is still *below* the fold and releases once you scroll past it, which is the
-opposite of a control bar that has to stay put.
+The controls stay in normal flow directly under the machine, and the empty verdict no longer reserves
+its height — between them that keeps the reels, the re-roll budget and the roll button on one screen
+at 375×667 and at 1400×700, so the button you press is next to the thing it operates. An earlier
+version pinned the controls to the bottom of the viewport instead; that put the button at the far end
+of the screen from the reels, which is not where your eye already is.
+
+## Pressing things
+
+Every control shares one press language — sink, darken, collapse the lift — fired on `pointerdown`,
+because the gap between pressing and releasing is exactly where a button feels dead. Buttons carry
+`touch-action: manipulation` (drops the ~300ms double-tap-to-zoom wait, the single biggest reason a
+web button feels laggy on a phone), no tap highlight (the OS paints a grey rectangle over the press
+animation, which reads as a stutter) and no text selection. A landing reel gives the cabinet a short
+vertical settle — vertical because the existing shake is horizontal and reads as alarm, not impact.
+
+The space bar is the advertised control, and holding it auto-repeats. The key handler used to bail out
+on `e.repeat` *before* calling `preventDefault`, which handed those repeats back to the browser — whose
+default action for Space is to page down. One held press threw you to the bottom of the page. It now
+claims the key first and decides what to do with it second.
 
 ## Sharing
 

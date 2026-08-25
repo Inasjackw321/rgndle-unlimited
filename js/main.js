@@ -2,7 +2,15 @@
  * Game loop and wiring.
  */
 
-import { ROLL_LENGTH, REROLLS_PER_DAY, rollDigit, distance, bankedPoints } from './scoring.js';
+import {
+  ROLL_LENGTH,
+  REROLLS_PER_DAY,
+  DIGIT_POINTS,
+  AVERAGE_DIGIT_POINTS,
+  rollDigit,
+  distance,
+  bankedPoints,
+} from './scoring.js';
 import { percentileOf, rankFor, celebration, RANKS, SAMPLE_SIZE } from './ranks.js';
 import {
   mountLanes,
@@ -52,6 +60,10 @@ function random() {
 }
 
 const playerId = () => auth.playerKey() || daily.guestId();
+
+/** "press space" is a lie on a phone. Ask the device which one it is. */
+const rollHint = () =>
+  window.matchMedia('(hover: none)').matches ? 'tap to roll' : 'press space';
 
 /* ------------------------------------------------------------------ *
  * Stored results
@@ -209,9 +221,12 @@ function paintGame({ animateLast = false } = {}) {
   stopCountdown();
 
   if (snap.phase === 'deciding') {
+    const off = distance(snap.target[snap.index], snap.pending);
     ui.showDecision(true);
     ui.setDecision({
-      distance: distance(snap.target[snap.index], snap.pending),
+      distance: off,
+      points: DIGIT_POINTS[off],
+      average: AVERAGE_DIGIT_POINTS,
       rerollsLeft: snap.rerollsLeft,
       isLast: snap.index === ROLL_LENGTH - 1,
     });
@@ -222,7 +237,7 @@ function paintGame({ animateLast = false } = {}) {
     ui.showDecision(false);
     ui.setRollButton({
       label: `ROLL DIGIT ${snap.index + 1}`,
-      sub: 'press space',
+      sub: rollHint(),
       disabled: state.busy,
     });
     ui.setStatus(
@@ -234,6 +249,14 @@ function paintGame({ animateLast = false } = {}) {
 /* ------------------------------------------------------------------ *
  * Actions
  * ------------------------------------------------------------------ */
+
+/** The cabinet takes the weight of a landing reel. */
+function thunk() {
+  const machine = document.querySelector('.machine');
+  machine.classList.remove('is-thunk');
+  void machine.offsetWidth;
+  machine.classList.add('is-thunk');
+}
 
 async function roll() {
   const snap = game.snapshot();
@@ -250,6 +273,7 @@ async function roll() {
   const digit = rollDigit(random);
   await spinOne(i, digit);
   audio.tick(i);
+  thunk();
 
   const next = game.settle(digit);
   const d = distance(snap.target[i], digit);
@@ -529,47 +553,66 @@ function setupSound() {
 }
 
 /**
- * Press feedback fires on pointerdown rather than click: the gap between
- * pressing and releasing is exactly where a button feels dead.
+ * Wires a button's press feedback and its action.
+ *
+ * The feedback fires on pointerdown rather than click: the gap between pressing
+ * and releasing is exactly where a button feels dead. Every control in the game
+ * gets the same treatment, so a press feels the same wherever you are — the
+ * shockwave is reserved for the big one.
  */
-function setupRollButton() {
-  const btn = ui.el('roll-btn');
+function pressable(btn, onClick, { ring = false } = {}) {
   const down = (event) => {
     if (btn.disabled) return;
     btn.classList.add('is-pressed');
     audio.unlock();
     audio.press();
     buzz(12);
-    pressRipple(btn, event);
+    if (ring) pressRipple(btn, event);
   };
   const up = () => btn.classList.remove('is-pressed');
 
   btn.addEventListener('pointerdown', down);
   for (const evt of ['pointerup', 'pointerleave', 'pointercancel']) btn.addEventListener(evt, up);
-  btn.addEventListener('click', roll);
+  btn.addEventListener('click', onClick);
+  return { down, up };
+}
 
+function setupRollButton() {
+  const btn = ui.el('roll-btn');
+  const { down, up } = pressable(btn, roll, { ring: true });
+
+  // The keyboard path gets the same animation the finger does.
   window.addEventListener('rngdle:press', () => {
     if (btn.disabled) return;
     down();
     setTimeout(up, 110);
   });
 
-  ui.el('keep-btn').addEventListener('click', keep);
-  ui.el('reroll-btn').addEventListener('click', doReroll);
-  ui.el('again-btn').addEventListener('click', playAgain);
+  pressable(ui.el('keep-btn'), keep);
+  pressable(ui.el('reroll-btn'), doReroll);
+  pressable(ui.el('again-btn'), playAgain, { ring: true });
 }
 
 function setupKeyboard() {
   window.addEventListener('keydown', (e) => {
-    if (e.repeat || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
     const tag = document.activeElement?.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA') return;
     if (ui.el('help-dialog').open || ui.el('setup-dialog').open) return;
 
+    const ours = e.code === 'Space' || e.code === 'Enter' || e.code === 'KeyR' || e.code === 'Backspace';
+    if (!ours) return;
+
+    // Claim the key before deciding what to do with it. Space is the advertised
+    // control, and holding it auto-repeats — bailing out on `e.repeat` first
+    // handed those repeats back to the browser, whose default action for Space
+    // is to page down. One held press threw you to the bottom of the page.
+    e.preventDefault();
+    if (e.repeat) return;
+
     const phase = game.snapshot().phase;
 
     if (e.code === 'Space' || e.code === 'Enter') {
-      e.preventDefault();
       if (phase === 'deciding') keep();
       else if (phase === 'done') playAgain();
       else {
@@ -579,10 +622,7 @@ function setupKeyboard() {
       return;
     }
     // R is only meaningful while a digit is awaiting a decision.
-    if ((e.code === 'KeyR' || e.code === 'Backspace') && phase === 'deciding') {
-      e.preventDefault();
-      doReroll();
-    }
+    if (phase === 'deciding') doReroll();
   });
 }
 

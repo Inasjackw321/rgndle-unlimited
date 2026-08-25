@@ -508,12 +508,22 @@ export function showDecision(visible) {
   el('decision').hidden = !visible;
 }
 
-export function setDecision({ distance, rerollsLeft, isLast }) {
-  el('reroll-sub').textContent = rerollsLeft === 1 ? '1 left' : `${rerollsLeft} left`;
+/**
+ * The one real decision in the game, stated in the only unit that matters.
+ *
+ * "distance 2" alone asks the player to remember a scoring table; "Keep +150"
+ * against "a re-roll averages +223" puts both sides of the trade on the buttons
+ * themselves. It is not advice — an unspent re-roll is worth 250 at the end and
+ * there are only three, so the arithmetic still doesn't decide for you.
+ */
+export function setDecision({ distance, points, average, rerollsLeft, isLast }) {
+  el('reroll-sub').textContent =
+    rerollsLeft > 0
+      ? `${rerollsLeft} left · avg +${Math.round(average)}`
+      : 'none left';
   el('reroll-btn').disabled = rerollsLeft <= 0;
-  el('keep-title').textContent = isLast ? 'Keep & finish' : 'Keep';
-  el('keep-sub').textContent =
-    distance === 0 ? 'bullseye!' : `distance ${distance}${distance >= 4 ? ' — ouch' : ''}`;
+  el('keep-title').textContent = `${isLast ? 'Finish' : 'Keep'} +${points.toLocaleString()}`;
+  el('keep-sub').textContent = distance === 0 ? 'bullseye!' : `${distance} away`;
 }
 
 export function renderRerolls(left, total) {
