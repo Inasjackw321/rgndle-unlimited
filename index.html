@@ -24,6 +24,7 @@
       <div class="brand">
         <span class="brand-mark" aria-hidden="true">🎯</span>
         <h1>GUSSLE<span id="puzzle-no"></span></h1>
+        <span class="test-badge" id="test-badge" hidden>TEST MODE</span>
       </div>
 
       <div class="topbar-actions">
@@ -47,6 +48,21 @@
           Roll each digit and land as close to the target as you can. Digits wrap, so 9 and 0 are neighbours.
         </p>
 
+        <div class="livebar" id="livebar">
+          <div class="live-cell">
+            <span class="live-label">SCORE</span>
+            <span class="live-value" id="live-score">0</span>
+          </div>
+          <div class="live-cell live-cell-pace">
+            <span class="live-label" id="live-pace-label">ON PACE FOR</span>
+            <span class="live-value" id="live-pace">—</span>
+          </div>
+          <div class="live-cell">
+            <span class="live-label">BULLSEYES</span>
+            <span class="live-value" id="live-bulls">0</span>
+          </div>
+        </div>
+
         <div class="machine">
           <div class="machine-glow" aria-hidden="true"></div>
 
@@ -63,6 +79,11 @@
           <button id="roll-btn" class="roll-btn" type="button">
             <span class="roll-btn-label">ROLL DIGIT 1</span>
             <span class="roll-btn-sub">press space</span>
+          </button>
+
+          <button id="again-btn" class="roll-btn is-again" type="button" hidden>
+            <span class="roll-btn-label">PLAY AGAIN</span>
+            <span class="roll-btn-sub">new target</span>
           </button>
 
           <div class="decision" id="decision" hidden>

@@ -13,23 +13,69 @@
   --accent-2: #c084fc;
   --hot: #ff5d8f;
   --gold: #ffc857;
-  --reel-h: 84px;
-  --reel-w: 62px;
+  /* Every piece of horizontal chrome between the window edge and a reel is a
+     variable, and the reel is solved from what's left. Breakpoints then tighten
+     the chrome rather than picking reel sizes by hand — which is what let 768px
+     fall through the cracks and overflow. */
+  --page-pad: clamp(16px, 4vw, 40px);
+  --layout-gap: clamp(18px, 3vw, 34px);
+  --side-w: 350px;
+  --machine-pad: clamp(14px, 3vw, 34px);
+  --lanes-pad: clamp(8px, 2vw, 18px);
+  --label-w: 56px;
+  --lane-gap: clamp(4px, 1vw, 9px);
+
+  --stage-w: calc(min(100vw, 1360px) - 2 * var(--page-pad) - var(--side-w) - var(--layout-gap));
+  --lane-chrome: calc(
+    2 * var(--machine-pad) + 2 * var(--lanes-pad) + var(--label-w) + 8 * var(--lane-gap)
+  );
+  --reel-w: min(62px, calc((var(--stage-w) - var(--lane-chrome)) / 9));
+  --reel-h: calc(var(--reel-w) * 1.355);
+
   --radius: 16px;
   --rank: var(--accent);
+
+  /* Shared gradients. Keeping them here means the roll button, the score and
+     the progress bars all drift through the same three hues. */
+  --grad-cool: linear-gradient(135deg, #8bf1ff, #6ee7ff 40%, #38bdf8);
+  --grad-vivid: linear-gradient(120deg, #6ee7ff, #c084fc 52%, #ff5d8f);
+  --grad-warm: linear-gradient(120deg, #ffc857, #ff8f5d 55%, #ff5d8f);
 }
 
-@media (max-width: 760px) {
+/* Laptop widths. The reels are the point of the page, so buy their space back
+   from the padding and the sidebar before letting them shrink. */
+@media (max-width: 1240px) {
   :root {
-    --reel-h: 62px;
-    --reel-w: 44px;
+    --page-pad: 16px;
+    --layout-gap: 20px;
+    --side-w: 290px;
+    --machine-pad: 14px;
+    --lanes-pad: 10px;
+    --lane-gap: 5px;
   }
 }
 
-@media (max-width: 480px) {
+/* Single column from here down, so the sidebar stops taking a share. */
+@media (max-width: 980px) {
   :root {
-    --reel-h: 50px;
-    --reel-w: 32px;
+    --side-w: 0px;
+    --layout-gap: 0px;
+  }
+}
+
+/* Phones. The row labels come off, the chrome goes to fixed pixels, and the
+   reels get a floor (below ~24px a digit stops being readable) plus a taller
+   aspect than the desktop solve, since height is the axis that isn't scarce.
+   72px = 2×10 page + 2×8 machine + 2×6 lanes + 8×3 gaps. */
+@media (max-width: 760px) {
+  :root {
+    --page-pad: 10px;
+    --machine-pad: 8px;
+    --lanes-pad: 6px;
+    --label-w: 0px;
+    --lane-gap: 3px;
+    --reel-w: clamp(24px, calc((100vw - 72px) / 9), 54px);
+    --reel-h: calc(var(--reel-w) * 1.42);
   }
 }
 
@@ -60,7 +106,11 @@ body {
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   font-size: 15px;
   line-height: 1.5;
-  overflow-x: hidden;
+  /* clip, not hidden: `overflow: hidden` would make the body a scroll
+     container, and an ancestor scroll container is exactly what stops the
+     mobile control bar's position:sticky from working. `clip` suppresses the
+     overflow without creating one. */
+  overflow-x: clip;
   -webkit-font-smoothing: antialiased;
 }
 
@@ -129,13 +179,43 @@ body {
   display: flex;
   align-items: baseline;
   gap: 8px;
+  background: var(--grad-vivid);
+  background-size: 220% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: hue-drift 9s ease-in-out infinite;
+}
+
+/* Slides the gradient across rather than recolouring it, so the three hues
+   stay in the order they were designed in. */
+@keyframes hue-drift {
+  0%,
+  100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
 }
 
 .brand h1 span {
   font-size: 0.55em;
   letter-spacing: 0.3em;
-  color: var(--accent);
   font-weight: 600;
+}
+
+.test-badge {
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 200, 87, 0.45);
+  background: rgba(255, 200, 87, 0.12);
+  color: var(--gold);
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  white-space: nowrap;
+  align-self: center;
 }
 
 .topbar-actions {
@@ -250,10 +330,10 @@ body {
   position: relative;
   z-index: 10;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 350px;
-  gap: clamp(18px, 3vw, 34px);
+  grid-template-columns: minmax(0, 1fr) var(--side-w);
+  gap: var(--layout-gap);
   align-items: start;
-  padding: 8px clamp(16px, 4vw, 40px) 60px;
+  padding: 8px var(--page-pad) 60px;
   max-width: 1360px;
   margin: 0 auto;
 }
@@ -272,12 +352,112 @@ body {
   gap: 24px;
 }
 
+/* ---------------- Live readout ---------------- */
+
+/* Three numbers that move while you play. "On pace for" is the solver's
+   expected final score from the current position, so it climbs on a good digit
+   and sags on a bad one — the thing you end up chasing. */
+.livebar {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  width: 100%;
+  max-width: 620px;
+  border-radius: 14px;
+  overflow: hidden;
+  border: 1px solid var(--panel-line);
+  background: var(--panel-line);
+  transition: border-color 0.4s, box-shadow 0.4s;
+}
+
+.live-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 10px 8px;
+  background: linear-gradient(180deg, rgba(20, 20, 40, 0.9), rgba(10, 10, 24, 0.9));
+}
+
+.live-label {
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  font-weight: 750;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.live-value {
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: clamp(17px, 4.4vw, 23px);
+  font-weight: 800;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  background: var(--grad-cool);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+.live-cell-pace .live-value {
+  background: var(--grad-vivid);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+
+/* On pace to beat your own best. The whole bar lifts, because that is the one
+   piece of news worth interrupting a roll for. */
+.livebar.is-ahead {
+  border-color: rgba(255, 200, 87, 0.55);
+  box-shadow: 0 0 30px -10px var(--gold);
+}
+
+.livebar.is-ahead .live-cell-pace .live-value {
+  background: var(--grad-warm);
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: hue-drift 3s ease-in-out infinite;
+}
+
+.livebar.is-hit {
+  animation: live-hit 0.7s cubic-bezier(0.2, 1.2, 0.35, 1);
+}
+
+.livebar.is-near {
+  animation: live-near 0.55s ease;
+}
+
+@keyframes live-hit {
+  0% {
+    box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.75);
+    border-color: #4ade80;
+  }
+  60% {
+    box-shadow: 0 0 44px -6px rgba(74, 222, 128, 0.75);
+    border-color: #4ade80;
+  }
+}
+
+@keyframes live-near {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  30% {
+    transform: translateX(-3px);
+  }
+  65% {
+    transform: translateX(3px);
+  }
+}
+
 /* ---------------- The machine ---------------- */
 
 .machine {
   position: relative;
   width: 100%;
-  padding: 30px clamp(14px, 3vw, 34px);
+  padding: 30px var(--machine-pad);
   border-radius: 24px;
   border: 1px solid var(--panel-line);
   background:
@@ -311,8 +491,8 @@ body {
 
 .lanes {
   display: flex;
-  gap: clamp(4px, 1vw, 9px);
-  padding: 14px clamp(8px, 2vw, 18px);
+  gap: var(--lane-gap);
+  padding: 14px var(--lanes-pad);
   border-radius: 16px;
   background: linear-gradient(180deg, #05050c, #0b0b18);
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -418,7 +598,8 @@ body {
   height: 20px;
 }
 
-@media (max-width: 700px) {
+/* Must match the breakpoint where --label-w drops to 0. */
+@media (max-width: 760px) {
   .lane-labels {
     display: none;
   }
@@ -806,7 +987,12 @@ body {
   padding: 17px 62px;
   border: 0;
   border-radius: 16px;
-  background: linear-gradient(180deg, var(--accent), #2bb8dd 60%, #1a9ec4);
+  /* A vertical bevel over a horizontal hue sweep. The bevel stays subtle: push
+     the white up and the drift washes the face out to near-paper at midcycle. */
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(0, 0, 0, 0.2)),
+    linear-gradient(110deg, #6ee7ff, #38bdf8 26%, #a78bfa 55%, #38bdf8 82%, #6ee7ff);
+  background-size: 100% 100%, 260% 100%;
   color: #041018;
   font-weight: 850;
   letter-spacing: 0.16em;
@@ -848,9 +1034,41 @@ body {
   transition-duration: 0.05s;
 }
 
-/* Idle invitation: a slow breath that stops the moment it is pressed. */
+/* Idle invitation: a slow breath that stops the moment it is pressed, and a
+   slower drift of the gradient underneath it. Two animations rather than one
+   so the breath can be interrupted without freezing the colour. */
 .roll-btn:not(:disabled):not(.is-pressed) {
-  animation: roll-breathe 3.4s ease-in-out infinite;
+  animation:
+    roll-breathe 3.4s ease-in-out infinite,
+    roll-drift 11s ease-in-out infinite;
+}
+
+@keyframes roll-drift {
+  0%,
+  100% {
+    background-position: 0 0, 0% 50%;
+  }
+  50% {
+    background-position: 0 0, 100% 50%;
+  }
+}
+
+/* Play again (test mode). Warm rather than cyan, so the two buttons never read
+   as the same action in the same place. */
+.roll-btn.is-again {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.16), rgba(0, 0, 0, 0.2)),
+    linear-gradient(110deg, #ffc857, #ffb340 28%, #ff8f5d 58%, #ffb340 84%, #ffc857);
+  background-size: 100% 100%, 260% 100%;
+  color: #251603;
+  box-shadow:
+    0 14px 34px -14px var(--gold),
+    inset 0 -3px 0 rgba(0, 0, 0, 0.22),
+    inset 0 2px 0 rgba(255, 255, 255, 0.45);
+}
+
+.roll-btn.is-again:not(:disabled):not(.is-pressed) {
+  animation: roll-drift 11s ease-in-out infinite;
 }
 
 @keyframes roll-breathe {
@@ -1032,8 +1250,18 @@ body {
   font-weight: 800;
   line-height: 1;
   font-variant-numeric: tabular-nums;
-  color: #fff;
-  text-shadow: 0 0 34px color-mix(in srgb, var(--rank) 60%, transparent);
+  /* Tinted by the rank you actually got, so the number itself carries the
+     result rather than only the badge beside it. */
+  background: linear-gradient(
+    135deg,
+    #ffffff,
+    color-mix(in srgb, var(--rank) 55%, #ffffff) 45%,
+    var(--rank)
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 0 26px color-mix(in srgb, var(--rank) 55%, transparent));
 }
 
 .verdict-rarity {
@@ -1252,9 +1480,27 @@ body {
   }
 }
 
-.board li.is-you {
-  border-color: rgba(110, 231, 255, 0.45);
-  background: rgba(110, 231, 255, 0.09);
+/* The podium reads at a glance from the row's tint, not just the medal. */
+.board li:nth-child(1) {
+  border-color: rgba(255, 200, 87, 0.34);
+  background: linear-gradient(90deg, rgba(255, 200, 87, 0.18), rgba(255, 200, 87, 0.02) 70%);
+}
+
+.board li:nth-child(2) {
+  border-color: rgba(216, 219, 232, 0.26);
+  background: linear-gradient(90deg, rgba(216, 219, 232, 0.13), rgba(216, 219, 232, 0.02) 70%);
+}
+
+.board li:nth-child(3) {
+  border-color: rgba(208, 138, 90, 0.28);
+  background: linear-gradient(90deg, rgba(208, 138, 90, 0.14), rgba(208, 138, 90, 0.02) 70%);
+}
+
+/* Your own row wins over any podium tint — it is the row you came to find. */
+.board li.is-you,
+.board li.is-you:nth-child(-n + 3) {
+  border-color: rgba(110, 231, 255, 0.5);
+  background: linear-gradient(90deg, rgba(110, 231, 255, 0.18), rgba(192, 132, 252, 0.07) 78%);
 }
 
 .board .place {
@@ -1710,11 +1956,15 @@ body {
   color: var(--muted);
 }
 
-@media (max-width: 620px) {
+/* Toasts clear the sticky control bar on phones rather than landing on top of
+   it — three achievement toasts arrive at exactly the moment you want to press
+   Play again. Stacking above it also leaves the live score and the verdict
+   readable, which putting them at the top of the screen would not. */
+@media (max-width: 760px) {
   .toasts {
-    left: 12px;
-    right: 12px;
-    bottom: 12px;
+    left: 10px;
+    right: 10px;
+    bottom: calc(96px + env(safe-area-inset-bottom, 0px));
     max-width: none;
   }
 }
@@ -1894,4 +2144,212 @@ body {
 
 .snippet-note {
   color: var(--muted);
+}
+
+/* ==================================================================
+   Mobile
+   ------------------------------------------------------------------
+   Horizontal padding here comes from the variables at the top of the
+   file, because --reel-w is solved against exactly those numbers.
+   ================================================================== */
+
+@media (max-width: 760px) {
+  .topbar {
+    gap: 10px;
+    padding: 12px var(--page-pad);
+  }
+
+  .brand {
+    gap: 8px;
+  }
+
+  .notice {
+    margin: 0 var(--page-pad) 6px;
+  }
+
+  /* The bottom padding is the space the fixed control bar was taking in flow,
+     so the end of the leaderboard is never parked underneath it. */
+  .layout {
+    padding: 6px var(--page-pad) calc(124px + env(safe-area-inset-bottom, 0px));
+    gap: 16px;
+  }
+
+  .stage {
+    gap: 14px;
+  }
+
+  .tagline {
+    font-size: 13px;
+    line-height: 1.45;
+  }
+
+  .machine {
+    padding: 18px var(--machine-pad);
+    gap: 16px;
+    border-radius: 20px;
+  }
+
+  .lanes {
+    padding: 11px var(--lanes-pad);
+    border-radius: 13px;
+  }
+
+  .lane {
+    gap: 5px;
+  }
+
+  .lane-delta {
+    font-size: 11px;
+    padding: 0 5px;
+  }
+
+  .rerolls {
+    padding: 7px 14px;
+    gap: 10px;
+  }
+
+  /* --- The control bar stays on screen ---------------------------- *
+     A phone can't show the machine and the verdict at once, so the roll button
+     would otherwise scroll off exactly when it's wanted.
+     Fixed, not sticky: `position: sticky; bottom: 0` pins a box that is still
+     *below* the fold and lets go once you scroll past it — the opposite of a
+     control bar that has to stay put. The page reserves the height it no longer
+     occupies in flow, further down. */
+  .controls {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 30;
+    width: auto;
+    min-height: 0;
+    padding: 12px var(--page-pad) calc(12px + env(safe-area-inset-bottom, 0px));
+    background: linear-gradient(180deg, rgba(7, 7, 15, 0), rgba(7, 7, 15, 0.92) 38%, rgba(7, 7, 15, 0.98));
+    backdrop-filter: blur(9px);
+  }
+
+  .roll-btn {
+    width: 100%;
+    padding: 17px 18px;
+    font-size: 17px;
+    border-radius: 15px;
+  }
+
+  .decision {
+    display: flex;
+    width: 100%;
+    gap: 8px;
+    flex-wrap: nowrap;
+  }
+
+  /* 56px keeps both targets comfortably above the 44px minimum even with
+     the label wrapping to two lines. */
+  .decision-btn {
+    flex: 1 1 0;
+    min-width: 0;
+    min-height: 56px;
+    justify-content: center;
+    gap: 8px;
+    padding: 10px 10px;
+    border-radius: 13px;
+  }
+
+  .decision-icon {
+    font-size: 17px;
+  }
+
+  .decision-title {
+    font-size: 14px;
+  }
+
+  .decision-sub {
+    font-size: 11px;
+  }
+
+  .status {
+    font-size: 12.5px;
+  }
+
+  /* --- Verdict ---------------------------------------------------- */
+  /* On desktop the empty verdict reserves its height so the page doesn't jump
+     when a result lands. A phone can't afford ~200px of reserved blank between
+     the controls and the leaderboard, so it collapses instead. */
+  .verdict[data-state='empty'] {
+    display: none;
+  }
+
+  .verdict {
+    flex-direction: column;
+    text-align: center;
+    gap: 14px;
+    min-height: 0;
+  }
+
+  .verdict-rank {
+    --size: 92px;
+  }
+
+  .verdict-body {
+    width: 100%;
+  }
+
+  .share-row {
+    justify-content: center;
+  }
+
+  .factors {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  /* --- Sidebar ---------------------------------------------------- */
+  .tabs {
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .tab {
+    flex: 1 0 auto;
+    padding: 12px 14px;
+    white-space: nowrap;
+  }
+
+  .panel {
+    max-height: none;
+    padding: 8px;
+  }
+}
+
+/* Phones narrow enough that the reels are at their floor: buy the space
+   back from everything around them instead. */
+@media (max-width: 400px) {
+  .brand-mark {
+    font-size: 21px;
+  }
+
+  .test-badge {
+    font-size: 8.5px;
+    padding: 2px 7px;
+    letter-spacing: 0.12em;
+  }
+
+  .live-label {
+    font-size: 8px;
+    letter-spacing: 0.1em;
+  }
+
+  .live-cell {
+    padding: 8px 4px;
+  }
+
+  .board li,
+  .history li,
+  .awards li {
+    padding: 7px 8px;
+    gap: 8px;
+  }
 }

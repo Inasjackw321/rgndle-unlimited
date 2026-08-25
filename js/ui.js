@@ -545,8 +545,46 @@ export function setStatus(html) {
   el('status').innerHTML = html || '';
 }
 
-export function setPuzzleNumber(n) {
-  el('puzzle-no').textContent = `#${n}`;
+export function setPuzzleNumber(n, run = 1) {
+  el('puzzle-no').textContent = run > 1 ? `#${n} · run ${run}` : `#${n}`;
+}
+
+export function setTestBadge(on) {
+  el('test-badge').hidden = !on;
+}
+
+export function showAgain(visible) {
+  el('again-btn').hidden = !visible;
+}
+
+/**
+ * The live readout.
+ *
+ * Mid-run the middle cell is the solver's expected final score from the current
+ * position, so it moves as the run goes well or badly — the number you end up
+ * chasing. Once the run is over that number is meaningless, so the cell swaps
+ * to the score it was chasing: your best. Either way the comparison is the
+ * point, and the bar lights when you're winning it.
+ */
+export function setLive({ score, pace, bullseyes, best, done = false }) {
+  const target = done ? best : pace;
+  el('live-score').textContent = Math.round(score).toLocaleString();
+  el('live-pace-label').textContent = done ? 'YOUR BEST' : 'ON PACE FOR';
+  el('live-pace').textContent = target ? Math.round(target).toLocaleString() : '—';
+  el('live-bulls').textContent = String(bullseyes);
+
+  const ahead = done ? Boolean(best) && score >= best : Boolean(best) && pace !== null && pace > best;
+  const bar = el('livebar');
+  bar.classList.toggle('is-ahead', ahead);
+  el('live-pace').title = best ? `Your best so far: ${best.toLocaleString()}` : '';
+}
+
+/** Brief emphasis when a digit lands well (or agonisingly close). */
+export function flashLive(kind) {
+  const bar = el('livebar');
+  bar.classList.remove('is-hit', 'is-near');
+  void bar.offsetWidth;
+  if (kind) bar.classList.add(kind === 'hit' ? 'is-hit' : 'is-near');
 }
 
 /* ------------------------------------------------------------------ *

@@ -21,6 +21,15 @@ export const CONFIG = {
    */
   leaderboardEndpoint: '',
 
+  /**
+   * TEST MODE. Lifts the one-game-per-day limit: finishing a run offers
+   * "Play again" with a fresh target, and the boards keep your *best* run of
+   * the day rather than your first.
+   *
+   * Set to false to go back to a true once-a-day puzzle.
+   */
+  testMode: true,
+
   /** Rolls kept in the local history panel. */
   historyLimit: 50,
 

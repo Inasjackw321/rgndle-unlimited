@@ -17,9 +17,16 @@ import { ROLL_LENGTH, REROLLS_PER_DAY, distance, scoreRound } from './scoring.js
 import { dateKey, dailyTarget } from './daily.js';
 import { STORES, read, write } from './profile.js';
 
-function freshState(day) {
+/**
+ * The target lives in the state rather than being re-derived from the date, so
+ * a practice run can carry its own. Run 1 of a day is always the real daily
+ * target; later runs (test mode only) get fresh random ones.
+ */
+function freshState(day, target, run = 1) {
   return {
     day,
+    target,
+    run,
     phase: 'ready',
     index: 0,
     rolled: [],
@@ -37,7 +44,20 @@ let owner = null;
 export function load(playerId, day = dateKey()) {
   owner = playerId;
   const stored = read(STORES.dayState, playerId, null);
-  state = stored && stored.day === day ? stored : freshState(day);
+  state =
+    stored && stored.day === day && Array.isArray(stored.target)
+      ? stored
+      : freshState(day, dailyTarget(day));
+  persist();
+  return snapshot();
+}
+
+/**
+ * Starts another run on a fresh target, keeping the run counter going.
+ * Only reachable in test mode; the daily limit is enforced by the caller.
+ */
+export function newRun(randomTarget) {
+  state = freshState(state.day, randomTarget, (state.run || 1) + 1);
   persist();
   return snapshot();
 }
@@ -48,10 +68,11 @@ function persist() {
 
 /** Everything the UI needs, with nothing it can mutate by accident. */
 export function snapshot() {
-  const target = dailyTarget(state.day);
+  const target = state.target;
   const distances = state.rolled.map((d, i) => distance(target[i], d));
   return {
     day: state.day,
+    run: state.run || 1,
     phase: state.phase,
     index: state.index,
     target,
@@ -117,11 +138,11 @@ export function reroll() {
 /** The finished day's scorecard. Null until every digit is settled. */
 export function result() {
   if (state?.phase !== 'done') return null;
-  return scoreRound(dailyTarget(state.day), state.rolled, { rerollsLeft: state.rerollsLeft });
+  return scoreRound(state.target, state.rolled, { rerollsLeft: state.rerollsLeft });
 }
 
 /** Distance of the digit currently awaiting a decision. */
 export function pendingDistance() {
   if (state?.phase !== 'deciding' || state.pending === null) return null;
-  return distance(dailyTarget(state.day)[state.index], state.pending);
+  return distance(state.target[state.index], state.pending);
 }

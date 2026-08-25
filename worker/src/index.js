@@ -331,13 +331,18 @@ export default {
         at: Date.now(),
       };
 
-      // Today's board: one row per player, replaced on resubmission.
+      // Today's board: one row per player, keeping their best of the day. A
+      // resubmission that scores worse leaves the standing row alone, so a
+      // practice run can never cost someone their place.
       const todayKey = dailyBoardKey(verified.day);
       const today = await readBoard(env, todayKey);
-      const nextToday = today.filter((e) => e.playerId !== identityKey);
-      nextToday.push(entry);
-      nextToday.sort((a, b) => b.score - a.score);
-      await writeBoard(env, todayKey, nextToday, DAILY_TTL);
+      const standing = today.find((e) => e.playerId === identityKey);
+      if (!standing || standing.score < verified.score) {
+        const nextToday = today.filter((e) => e.playerId !== identityKey);
+        nextToday.push(entry);
+        nextToday.sort((a, b) => b.score - a.score);
+        await writeBoard(env, todayKey, nextToday, DAILY_TTL);
+      }
 
       // All-time board: each player's single best day.
       const best = await readBoard(env, BOARD_KEY);

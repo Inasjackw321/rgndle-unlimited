@@ -158,6 +158,15 @@ export function scoreRound(target, rolled, { rerollsLeft = 0 } = {}) {
   };
 }
 
+/**
+ * Points banked so far, mid-run. Only the per-digit accuracy component — the
+ * combo and control bonuses can't be settled until every digit is in, so
+ * counting them early would show a number that later goes *down*.
+ */
+export function bankedPoints(target, rolled) {
+  return rolled.reduce((sum, d, i) => sum + DIGIT_POINTS[distance(target[i], d)], 0);
+}
+
 /** The best score physically reachable, for progress bars and copy. */
 export const MAX_SCORE =
   ROLL_LENGTH * DIGIT_POINTS[0] +

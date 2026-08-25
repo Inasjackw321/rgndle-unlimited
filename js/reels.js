@@ -19,9 +19,23 @@ const EASING = 'cubic-bezier(0.16, 0.84, 0.24, 1)';
 let container = null;
 const lanes = [];
 
+/**
+ * The distance between one digit and the next, measured off a real strip.
+ *
+ * Deliberately not read from `--reel-h`: that is a calc() now, and
+ * getPropertyValue hands back the unresolved expression, which parseFloat turns
+ * into NaN — silently falling back to the desktop 84px and leaving every mobile
+ * reel parked half a digit off. Measuring ten cells and dividing by ten also
+ * averages out the subpixel rounding a single fractional cell would accumulate
+ * over a long spin.
+ */
 function cellHeight() {
-  const raw = getComputedStyle(document.documentElement).getPropertyValue('--reel-h');
-  return parseFloat(raw) || 84;
+  const cells = lanes[0]?.strip?.children;
+  if (cells && cells.length > 10) {
+    const step = (cells[10].getBoundingClientRect().top - cells[0].getBoundingClientRect().top) / 10;
+    if (step > 0) return step;
+  }
+  return parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--reel-h')) || 84;
 }
 
 const prefersReducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;

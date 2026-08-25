@@ -18,6 +18,19 @@ Re-rolls don't come back until tomorrow, and an unspent one is worth points at t
 whole game: a mediocre digit on lane one is usually worth keeping, while the same digit on lane nine
 is worth burning a re-roll on. Judging the middle is the interesting part.
 
+### Test mode
+
+`testMode` in `js/config.js` is currently **on**, which lifts the one-game-per-day limit: finishing a
+run offers **Play again** on a fresh random target, and the header reads `#237 · run 2`. Run 1 of a
+day is always the real shared target — only the extra runs are random, so the daily puzzle stays the
+daily puzzle.
+
+Replays can only ever help you. Today's board, the all-time board and the history row all keep your
+**best** run of the day, so a practice run that goes badly can't cost you a place you already earned.
+`tools/verify.mjs` doesn't cover that — the browser test does.
+
+Set `testMode: false` to go back to a true once-a-day puzzle.
+
 ### Digits wrap
 
 Distance is measured the short way round, so **9 and 0 are one apart** and the worst you can ever be
@@ -80,6 +93,32 @@ would need the current run length in the state for a bonus that is rare and smal
 a windfall. `tools/gen-percentiles.mjs` cross-checks the simulation against the solved expectation and
 asserts the simulated mean lands *slightly above* it — below would mean the policy isn't being
 followed, far above would mean the run bonus is mis-scaled.
+
+## Reading the machine while you play
+
+Above the reels sit three numbers that move as you go: what you've banked, how many bullseyes, and
+**on pace for** — the solver's expected final score from the position you're actually in. It climbs on
+a good digit and sags on a bad one, and the whole bar lights up when the pace passes your personal
+best. When the run ends, that middle cell stops being a prediction and shows the best you're measured
+against instead.
+
+## Layout on small screens
+
+The reels are the page, so their size is *solved* rather than picked per breakpoint: every piece of
+horizontal chrome between the window edge and a reel — page padding, sidebar, machine padding, lane
+padding, the eight gaps, the row-label column — is a CSS variable, and `--reel-w` is what's left over
+divided by nine. Breakpoints then tighten the chrome instead of guessing reel sizes. Picking sizes by
+hand is what left 768px overflowing.
+
+`js/reels.js` measures the step between digits off a real strip rather than parsing `--reel-h`, which
+is a `calc()` now — `getPropertyValue` hands back the unresolved expression, and the resulting NaN
+silently parked every phone reel half a digit off.
+
+On phones the control bar is fixed to the bottom of the viewport, so the roll button stays reachable
+while you scroll through the verdict — with the page reserving the height it no longer takes in flow,
+and achievement toasts stacking above it rather than on top of it. Not `position: sticky`: `bottom: 0`
+sticky pins a box that is still *below* the fold and releases once you scroll past it, which is the
+opposite of a control bar that has to stay put.
 
 ## Sharing
 
@@ -159,7 +198,8 @@ is a browser test for it.
 
 ## Leaderboard
 
-By default the boards live in `localStorage` — today's board and your best day ever, per device. The
+By default the boards live in `localStorage` — your best run of today and your best day ever, per
+device. The
 panel says so plainly, because a solo board that says "nobody has played today yet" reads as though
 other people exist and simply haven't shown up.
 

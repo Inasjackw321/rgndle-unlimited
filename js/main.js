@@ -2,7 +2,7 @@
  * Game loop and wiring.
  */
 
-import { ROLL_LENGTH, REROLLS_PER_DAY, rollDigit, distance } from './scoring.js';
+import { ROLL_LENGTH, REROLLS_PER_DAY, rollDigit, distance, bankedPoints } from './scoring.js';
 import { percentileOf, rankFor, celebration, RANKS, SAMPLE_SIZE } from './ranks.js';
 import {
   mountLanes,
@@ -21,6 +21,7 @@ import * as auth from './auth.js';
 import * as board from './leaderboard.js';
 import * as daily from './daily.js';
 import * as game from './game.js';
+import { expectedScore } from './strategy.js';
 import * as achievements from './achievements.js';
 import * as share from './share.js';
 import * as profile from './profile.js';
@@ -61,7 +62,10 @@ function loadHistory() {
 }
 
 function saveResult(entry) {
-  // One row per day: replaying the same day should update, never duplicate.
+  // One row per day, and it's the day's *best*: replaying (test mode) should
+  // never demote a run you already put on the board.
+  const previous = state.history.find((h) => h.day === entry.day);
+  if (previous && previous.score >= entry.score) return;
   state.history = [entry, ...state.history.filter((h) => h.day !== entry.day)].slice(
     0,
     resolved().historyLimit,
@@ -130,12 +134,43 @@ function startCountdown() {
   state.countdownTimer = setInterval(paint, 1000);
 }
 
+/** Best score this player has ever posted, for the "are we ahead?" glow. */
+function personalBest() {
+  return state.history.reduce((best, h) => Math.max(best, h.score || 0), 0);
+}
+
+function paintLive() {
+  const snap = game.snapshot();
+  const done = snap.phase === 'done';
+
+  // Mid-run only the per-digit points are banked; the combo and control bonuses
+  // can't be settled until every digit is in. Once it is, show the real total —
+  // otherwise the bar disagrees with the verdict right underneath it.
+  const score = done ? game.result().total : bankedPoints(snap.target, snap.rolled);
+
+  // The solver's expected final score from here, plus what's already banked.
+  const pace = done
+    ? null
+    : score +
+      expectedScore({
+        digitsLeft: snap.digitsLeft,
+        rerollsLeft: snap.rerollsLeft,
+        bullseyes: snap.bullseyes,
+        total: snap.total,
+        worst: snap.worst,
+      });
+
+  ui.setLive({ score, pace, bullseyes: snap.bullseyes, best: personalBest(), done });
+}
+
 /** Redraws lanes, pips and controls from the persisted game state. */
 function paintGame({ animateLast = false } = {}) {
   const snap = game.snapshot();
 
   setTarget(snap.target);
   ui.renderRerolls(snap.rerollsLeft, REROLLS_PER_DAY);
+  ui.setPuzzleNumber(daily.puzzleNumber(snap.day), snap.run);
+  paintLive();
 
   for (let i = 0; i < ROLL_LENGTH; i++) {
     if (i < snap.rolled.length) {
@@ -157,11 +192,20 @@ function paintGame({ animateLast = false } = {}) {
 
   if (snap.phase === 'done') {
     ui.showDecision(false);
-    ui.setRollButton({ label: 'DONE FOR TODAY', sub: 'come back tomorrow', disabled: true });
+    const unlimited = resolved().testMode;
+    ui.setRollButton({
+      label: unlimited ? 'RUN COMPLETE' : 'DONE FOR TODAY',
+      sub: unlimited ? '' : 'come back tomorrow',
+      disabled: true,
+    });
+    ui.el('roll-btn').hidden = unlimited;
+    ui.showAgain(unlimited);
     startCountdown();
     return;
   }
 
+  ui.el('roll-btn').hidden = false;
+  ui.showAgain(false);
   stopCountdown();
 
   if (snap.phase === 'deciding') {
@@ -217,8 +261,15 @@ async function roll() {
   if (d === 0) {
     flashBullseye(i);
     audio.cosmicHit(5);
-    burst(laneElement(i), { count: 60, colors: ['#4ade80', '#ffffff'], power: 0.9 });
+    buzz([12, 40, 18]);
+    burst(laneElement(i), { count: 70, colors: ['#4ade80', '#a7f3d0', '#ffffff'], power: 1 });
+    ui.flashLive('hit');
+  } else if (d === 1) {
+    // One away is the most interesting outcome in the game; say so.
+    ui.flashLive('near');
+    burst(laneElement(i), { count: 22, colors: ['#a7f3d0'], power: 0.6 });
   }
+  paintLive();
 
   state.busy = false;
 
@@ -233,6 +284,18 @@ function keep() {
   audio.release();
   const next = game.keep();
   if (next.phase === 'done') return finish();
+  paintGame();
+}
+
+function playAgain() {
+  if (state.busy || !resolved().testMode) return;
+  audio.press();
+  const fresh = Array.from({ length: ROLL_LENGTH }, () => rollDigit(random));
+  game.newRun(fresh);
+  ui.clearVerdict();
+  ui.showShare(false);
+  document.querySelector('.machine').classList.remove('is-lit');
+  ui.setRankColor(RANKS[0]);
   paintGame();
 }
 
@@ -493,6 +556,7 @@ function setupRollButton() {
 
   ui.el('keep-btn').addEventListener('click', keep);
   ui.el('reroll-btn').addEventListener('click', doReroll);
+  ui.el('again-btn').addEventListener('click', playAgain);
 }
 
 function setupKeyboard() {
@@ -507,6 +571,7 @@ function setupKeyboard() {
     if (e.code === 'Space' || e.code === 'Enter') {
       e.preventDefault();
       if (phase === 'deciding') keep();
+      else if (phase === 'done') playAgain();
       else {
         window.dispatchEvent(new Event('rngdle:press'));
         roll();
@@ -640,6 +705,7 @@ async function init() {
 
   const day = daily.dateKey();
   ui.setPuzzleNumber(daily.puzzleNumber(day));
+  ui.setTestBadge(resolved().testMode);
   mountLanes(ui.el('lanes'), daily.dailyTarget(day));
 
   ui.initTabs();

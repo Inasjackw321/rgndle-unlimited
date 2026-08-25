@@ -61,14 +61,15 @@ const LocalBoard = {
 
   /**
    * Today's board holds one row per player; the all-time board holds each
-   * player's single best day.
+   * player's single best day. Both keep the *higher* score, so a practice run
+   * that goes badly can never knock you down your own board.
    */
   async submit(entry) {
     const store = read(LOCAL_DAILY_KEY, { day: null, entries: [] });
     const today = store.day === entry.day ? store.entries : [];
     const at = today.findIndex((e) => e.playerId === entry.playerId);
     if (at === -1) today.push(entry);
-    else today[at] = entry;
+    else if (today[at].score < entry.score) today[at] = entry;
     write(LOCAL_DAILY_KEY, { day: entry.day, entries: today });
 
     const best = read(LOCAL_KEY, []);
