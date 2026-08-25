@@ -161,19 +161,26 @@ there is no provider that skips this. Google's is the more forgiving kind, becau
 
 ### Setup
 
-Open the game and press **Set up sign-in** in the top right — the dialog prints the exact origin to
-authorise, with a copy button, and takes the client ID. Behind it:
+This deployment ships a client ID in `js/config.js`, so sign-in is live for every visitor. For your own
+fork:
 
 1. In [Google Cloud → Credentials](https://console.cloud.google.com/apis/credentials), create an
    **OAuth client ID** of type **Web application**.
-2. Under **Authorised JavaScript origins**, add your origin — e.g. `https://<you>.github.io`. There is
-   no redirect URI to add.
-3. Put the client ID (`…apps.googleusercontent.com`) into `js/config.js` as `googleClientId`.
+2. Under **Authorised JavaScript origins**, add your origin — e.g. `https://<you>.github.io`. Note that
+   is the *origin* only: no path, no trailing slash, and no redirect URI to add.
+3. Put the client ID (`…apps.googleusercontent.com`) into `js/config.js` as `googleClientId`, and into
+   `worker/wrangler.toml` as `GOOGLE_CLIENT_ID` if you deploy the leaderboard. The two must match — the
+   Worker checks that every token was issued for exactly this client.
 
-Settings entered in the dialog are per-browser, which suits trying it out. To enable sign-in for
-**everyone** who visits, put the value in `js/config.js` and redeploy. A client ID is public — it ships
-to the browser either way. The thing you must never commit is the client *secret*, which this flow
-never uses.
+You can also enter it in-game via **Set up sign-in** (or the help dialog once configured), which stores
+it for that browser only — handy for testing without a redeploy. A per-browser value overrides
+`config.js`; **Clear** removes it and falls back.
+
+A client ID is public — it ships to the browser either way. The thing you must never commit is the
+client *secret*, which this flow never uses.
+
+If Google Identity Services can't be reached, the sign-in slot says so and the game stays fully
+playable as a guest.
 
 ### Session handling
 

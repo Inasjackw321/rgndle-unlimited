@@ -13,7 +13,7 @@ export const CONFIG = {
    * Authorise this site's origin under "Authorised JavaScript origins".
    * Leave empty to run the game in guest-only mode.
    */
-  googleClientId: '',
+  googleClientId: '415975643615-u5mp1cnrltc6bg231hlmklpi4d9m73ud.apps.googleusercontent.com',
 
   /**
    * Shared leaderboard endpoint (see worker/ for a ready-made Cloudflare

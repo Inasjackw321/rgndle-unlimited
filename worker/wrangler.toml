@@ -13,7 +13,8 @@ ANNOUNCE_MIN_RANK = "SS"
 
 # REQUIRED. The Worker checks that every Google ID token was issued for *this*
 # client; without it a token minted for any other site would be accepted.
-# GOOGLE_CLIENT_ID = "123456-abc.apps.googleusercontent.com"
+# Must stay in step with googleClientId in js/config.js.
+GOOGLE_CLIENT_ID = "415975643615-u5mp1cnrltc6bg231hlmklpi4d9m73ud.apps.googleusercontent.com"
 
 # Create with:  npx wrangler kv namespace create RNGDLE
 # then paste the returned id below.
