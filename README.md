@@ -106,23 +106,31 @@ a good digit and sags on a bad one, and the whole bar lights up when the pace pa
 best. When the run ends, that middle cell stops being a prediction and shows the best you're measured
 against instead.
 
-## Layout on small screens
+## Layout
 
-The reels are the page, so their size is *solved* rather than picked per breakpoint: every piece of
-horizontal chrome between the window edge and a reel — page padding, sidebar, machine padding, lane
-padding, the eight gaps, the row-label column — is a CSS variable, and `--reel-w` is what's left over
-divided by nine. Breakpoints then tighten the chrome instead of guessing reel sizes. Picking sizes by
-hand is what left 768px overflowing.
+The game is the page. One centred column holds the live readout, the machine and the controls, and
+nothing else competes with it — the leaderboard, history, stats and awards live in a drawer behind a
+single **Board** button. It's a `<dialog>`, so focus trapping, Escape, the backdrop and making the page
+behind it inert all come free and correct: a side sheet on a wide screen, a bottom sheet on a phone.
+The board refreshes when the drawer opens rather than on a timer, because nobody needs a live board
+they aren't looking at.
+
+Reclaiming the sidebar's column took the reels from 62px to 70px wide, and the whole game — reels,
+re-roll budget, roll button — now sits above the fold at 375×667 and at 1400×900.
+
+The reels' size is *solved* rather than picked per breakpoint: every piece of horizontal chrome between
+the window edge and a reel — page padding, machine padding, lane padding, the eight gaps, the row-label
+column — is a CSS variable, and `--reel-w` is what's left over divided by nine. Breakpoints then tighten
+the chrome instead of guessing reel sizes. Picking sizes by hand is what left 768px overflowing.
 
 `js/reels.js` measures the step between digits off a real strip rather than parsing `--reel-h`, which
 is a `calc()` now — `getPropertyValue` hands back the unresolved expression, and the resulting NaN
 silently parked every phone reel half a digit off.
 
-The controls stay in normal flow directly under the machine, and the empty verdict no longer reserves
-its height — between them that keeps the reels, the re-roll budget and the roll button on one screen
-at 375×667 and at 1400×700, so the button you press is next to the thing it operates. An earlier
-version pinned the controls to the bottom of the viewport instead; that put the button at the far end
-of the screen from the reels, which is not where your eye already is.
+The controls stay in normal flow directly under the machine, and an empty verdict no longer reserves
+its height, so the button you press is next to the thing it operates. An earlier version pinned the
+controls to the bottom of the viewport instead; that put the button at the far end of the screen from
+the reels, which is not where your eye already is.
 
 ## Pressing things
 
@@ -268,7 +276,7 @@ step if the board ever matters enough to be worth cheating at.
 ## Layout
 
 ```
-index.html                  markup and DOM contract
+index.html                  markup and DOM contract (the game, plus the drawer it hides)
 styles.css                  all visuals and animation
 js/scoring.js               distance-based scoring — pure, runs in browser, Worker and Node alike
 js/strategy.js              the solved MDP: optimal re-roll policy and reference play

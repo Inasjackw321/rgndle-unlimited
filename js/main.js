@@ -184,6 +184,10 @@ function paintGame({ animateLast = false } = {}) {
   ui.setPuzzleNumber(daily.puzzleNumber(snap.day), snap.run);
   paintLive();
 
+  // The rulebook line earns its space until you've rolled once, and never
+  // again — the lanes are labelled and "How to play" is one button away.
+  ui.el('tagline').hidden = state.history.length > 0 || snap.rolled.length > 0;
+
   for (let i = 0; i < ROLL_LENGTH; i++) {
     if (i < snap.rolled.length) {
       if (!animateLast || i < snap.rolled.length - 1) setDigit(i, snap.rolled[i], { silent: true });
@@ -537,6 +541,28 @@ function setupSetupDialog() {
   return { open };
 }
 
+/**
+ * The drawer holding the leaderboard, history, stats and awards.
+ *
+ * They are reference material, not part of playing, so they stay shut until
+ * asked for. The board is refreshed on open rather than on a timer — nobody
+ * needs a live board they aren't looking at.
+ */
+function setupDrawer() {
+  const drawer = ui.el('drawer');
+  ui.el('drawer-btn').addEventListener('click', () => {
+    audio.press();
+    drawer.showModal();
+    refreshBoard();
+  });
+  drawer.querySelector('.drawer-close').addEventListener('click', () => drawer.close());
+  // The dialog element fills its own backdrop area, so a click lands on the
+  // dialog itself only when it is outside the sheet.
+  drawer.addEventListener('click', (e) => {
+    if (e.target === drawer) drawer.close();
+  });
+}
+
 function setupSound() {
   const btn = ui.el('sound-toggle');
   const paint = () => {
@@ -598,7 +624,7 @@ function setupKeyboard() {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     const tag = document.activeElement?.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA') return;
-    if (ui.el('help-dialog').open || ui.el('setup-dialog').open) return;
+    if (ui.el('help-dialog').open || ui.el('setup-dialog').open || ui.el('drawer').open) return;
 
     const ours = e.code === 'Space' || e.code === 'Enter' || e.code === 'KeyR' || e.code === 'Backspace';
     if (!ours) return;
@@ -754,6 +780,7 @@ async function init() {
     refreshBoard();
   });
   setupHelp();
+  setupDrawer();
   setupSound();
   setupKeyboard();
   setupShare();

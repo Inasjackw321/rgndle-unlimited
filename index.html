@@ -32,6 +32,11 @@
           <span data-sound-on>🔊</span><span data-sound-off hidden>🔇</span>
         </button>
         <button id="help-btn" class="icon-btn" type="button" title="How to play">?</button>
+        <!-- One door to the leaderboard, history, stats and awards. They are
+             reference material; the game is the page. -->
+        <button id="drawer-btn" class="icon-btn is-wide" type="button" aria-haspopup="dialog" title="Leaderboard, history, stats and awards">
+          <span aria-hidden="true">🏆</span><span class="icon-btn-label">Board</span>
+        </button>
         <div id="auth-slot" class="auth-slot">
           <!-- Filled in by ui.renderAuth: Google's rendered button, the signed-in
                chip, or the setup prompt when no client ID is configured. -->
@@ -123,6 +128,15 @@
         <div class="factors" id="factors" aria-live="polite"></div>
       </section>
 
+    </main>
+
+    <!-- A dialog, not a hand-rolled panel: focus trapping, Escape, backdrop and
+         inertness of the page behind all come free and correct. -->
+    <dialog id="drawer" class="drawer" aria-label="Leaderboard, history, stats and awards">
+      <div class="drawer-head">
+        <h2 class="drawer-title">Your record</h2>
+        <button class="icon-btn drawer-close" type="button" aria-label="Close">✕</button>
+      </div>
       <aside class="sidebar">
         <div class="tabs" role="tablist">
           <button class="tab is-active" role="tab" data-panel="leaderboard" aria-selected="true">Today</button>
@@ -160,7 +174,7 @@
           <ul class="awards" id="awards"></ul>
         </div>
       </aside>
-    </main>
+    </dialog>
 
     <div class="toasts" id="toasts" aria-live="polite" aria-atomic="false"></div>
 
