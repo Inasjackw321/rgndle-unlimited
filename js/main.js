@@ -33,6 +33,7 @@ import { expectedScore } from './strategy.js';
 import * as achievements from './achievements.js';
 import * as share from './share.js';
 import * as profile from './profile.js';
+import * as backup from './backup.js';
 import { resolved, overrides, saveOverrides, clearOverrides, isValidGoogleClientId, jsOrigin } from './config.js';
 import * as ui from './ui.js';
 
@@ -542,6 +543,67 @@ function setupSetupDialog() {
 }
 
 /**
+ * Saving the boards to a file, and reading one back.
+ *
+ * Everything is on-device until the Worker is deployed, so this is the only
+ * thing standing between a cleared browser and a lost record.
+ */
+function setupBackup() {
+  const saveBtn = ui.el('save-data');
+  const restoreBtn = ui.el('restore-data');
+  const input = ui.el('restore-input');
+
+  saveBtn.addEventListener('click', () => {
+    const save = backup.collect();
+    const { days, players } = backup.describe(save);
+    backup.download(save, `gussle-save-${daily.dateKey()}.json`);
+    ui.flashButton(saveBtn, 'Saved!');
+    ui.toast({
+      icon: '💾',
+      label: 'SAVED',
+      name: `${days} day${days === 1 ? '' : 's'} written to a file`,
+      desc: players ? `${players} player${players === 1 ? '' : 's'} on the board` : 'Keep it somewhere safe.',
+    });
+  });
+
+  restoreBtn.addEventListener('click', () => input.click());
+
+  input.addEventListener('change', async () => {
+    const file = input.files?.[0];
+    // Clear it either way, or picking the same file twice fires nothing.
+    input.value = '';
+    if (!file) return;
+
+    // Clear any previous failure so a retry doesn't look like it failed again.
+    ui.notice(null);
+
+    try {
+      const save = backup.parse(await file.text());
+      const { restored, failed } = backup.restore(save, playerId());
+      if (failed.length) throw new backup.RestoreError('This browser is blocking storage.');
+
+      reloadProfile();
+      await refreshBoard();
+      ui.flashButton(restoreBtn, 'Restored!');
+      const { days } = backup.describe(save);
+      ui.toast({
+        icon: '📥',
+        label: 'RESTORED',
+        name: `Merged ${restored.length} record${restored.length === 1 ? '' : 's'}`,
+        desc: `${days} day${days === 1 ? '' : 's'} from the file, best of each kept.`,
+      });
+    } catch (err) {
+      ui.flashButton(restoreBtn, 'Failed');
+      ui.notice(
+        err instanceof backup.RestoreError
+          ? `Could not restore: ${err.message}`
+          : `Could not read that file: ${err.message}`,
+      );
+    }
+  });
+}
+
+/**
  * The drawer holding the leaderboard, history, stats and awards.
  *
  * They are reference material, not part of playing, so they stay shut until
@@ -781,6 +843,7 @@ async function init() {
   });
   setupHelp();
   setupDrawer();
+  setupBackup();
   setupSound();
   setupKeyboard();
   setupShare();

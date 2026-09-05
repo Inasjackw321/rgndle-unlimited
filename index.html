@@ -156,6 +156,18 @@
           </div>
           <div class="panel-note" id="board-note"></div>
           <ol class="board" id="board"></ol>
+
+          <!-- The boards live in this browser until the Worker is deployed, and
+               "clear site data" is one click away from erasing them. -->
+          <div class="data-row">
+            <button type="button" class="share-btn" id="save-data">💾 Save a copy</button>
+            <button type="button" class="share-btn" id="restore-data">Restore…</button>
+            <input type="file" id="restore-input" accept="application/json,.json" hidden />
+          </div>
+          <p class="panel-note" id="data-note">
+            Downloads your boards, results, streak and achievements as one file. Restoring merges it
+            in, so two devices add up rather than overwrite.
+          </p>
         </div>
 
         <div class="panel" data-panel="history">

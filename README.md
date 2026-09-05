@@ -224,6 +224,30 @@ is a browser test for it.
 
 ## Leaderboard
 
+### Saving it
+
+The boards live in this browser, and "clear site data" is one click away from erasing them — on a new
+phone they were never there at all. **Save a copy** in the leaderboard panel downloads your boards,
+results, streak and achievements as one JSON file; **Restore…** reads one back.
+
+Restoring **merges**, it doesn't replace, so two devices add up to one record and a file from last
+month can't undo this morning. Every conflict resolves in the direction that can't lose anything: the
+higher score per player and per day, the longer streak, the earlier unlock. Today's board only merges
+rows from the same day, because scores from a different target aren't comparable.
+
+Two things are deliberately left out of the file. `gussle_day` — the in-progress game — because
+letting a file overwrite it would hand back re-rolls you had already spent, which is the exact rewind
+the day-state design exists to prevent. And anything under `rngdle_*`, because that is the session
+token and a signed-in token has no business in a file you might email to yourself.
+
+Guest identities are re-homed on the way in. An account key (`google:1098765…`) means the same person
+everywhere, so it restores verbatim; a guest key is a UUID minted per browser and names *that*
+browser's guest, so it lands on whoever is playing here instead. Without that, restoring onto a new
+device files your whole record under an identity that device never uses and the boards come back
+looking empty.
+
+### Playing against other people
+
 By default the boards live in `localStorage` — your best run of today and your best day ever, per
 device. The
 panel says so plainly, because a solo board that says "nobody has played today yet" reads as though
@@ -293,6 +317,7 @@ js/auth.js                  sign-in facade and session store
 js/google.js                Google Identity Services, JWT ID tokens
 js/profile.js               per-identity storage and guest adoption
 js/leaderboard.js           local and remote board adapters
+js/backup.js                save to a file, restore by merging
 js/ui.js                    rendering
 js/main.js                  game loop and wiring
 tools/gen-percentiles.mjs   Monte Carlo of optimal play -> js/percentiles.js

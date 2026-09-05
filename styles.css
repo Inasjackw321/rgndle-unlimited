@@ -2350,6 +2350,26 @@ body {
   color: var(--muted);
 }
 
+/* ---------------- Save / restore ---------------- */
+
+.data-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--panel-line);
+}
+
+.data-row .share-btn {
+  flex: 1 1 auto;
+  padding: 9px 12px;
+}
+
+#data-note {
+  padding-top: 8px;
+}
+
 /* ==================================================================
    Mobile
    ------------------------------------------------------------------
