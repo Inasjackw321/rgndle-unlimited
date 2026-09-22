@@ -17,16 +17,9 @@ import { ROLL_LENGTH, REROLLS_PER_DAY, distance, scoreRound } from './scoring.js
 import { dateKey, dailyTarget } from './daily.js';
 import { STORES, read, write } from './profile.js';
 
-/**
- * The target lives in the state rather than being re-derived from the date, so
- * a practice run can carry its own. Run 1 of a day is always the real daily
- * target; later runs (test mode only) get fresh random ones.
- */
-function freshState(day, target, run = 1) {
+function freshState(day) {
   return {
     day,
-    target,
-    run,
     phase: 'ready',
     index: 0,
     rolled: [],
@@ -38,44 +31,33 @@ function freshState(day, target, run = 1) {
 }
 
 let state = null;
-let owner = null;
 
-/** Loads (or starts) today's game for a player. Safe to call repeatedly. */
-export function load(playerId, day = dateKey()) {
-  owner = playerId;
-  const stored = read(STORES.dayState, playerId, null);
-  state =
-    stored && stored.day === day && Array.isArray(stored.target)
-      ? stored
-      : freshState(day, dailyTarget(day));
-  persist();
-  return snapshot();
-}
-
-/**
- * Starts another run on a fresh target, keeping the run counter going.
- * Only reachable in test mode; the daily limit is enforced by the caller.
- */
-export function newRun(randomTarget) {
-  state = freshState(state.day, randomTarget, (state.run || 1) + 1);
+/** Loads (or starts) today's game. Safe to call repeatedly. */
+export function load(day = dateKey()) {
+  const stored = read(STORES.dayState);
+  state = stored && stored.day === day ? stored : freshState(day);
   persist();
   return snapshot();
 }
 
 function persist() {
-  if (owner) write(STORES.dayState, owner, state);
+  write(STORES.dayState, state);
+}
+
+/** The day's target, derived rather than stored — it is the same for everyone. */
+function target() {
+  return dailyTarget(state.day);
 }
 
 /** Everything the UI needs, with nothing it can mutate by accident. */
 export function snapshot() {
-  const target = state.target;
-  const distances = state.rolled.map((d, i) => distance(target[i], d));
+  const goal = target();
+  const distances = state.rolled.map((d, i) => distance(goal[i], d));
   return {
     day: state.day,
-    run: state.run || 1,
     phase: state.phase,
     index: state.index,
-    target,
+    target: goal,
     rolled: [...state.rolled],
     distances,
     pending: state.pending,
@@ -138,11 +120,11 @@ export function reroll() {
 /** The finished day's scorecard. Null until every digit is settled. */
 export function result() {
   if (state?.phase !== 'done') return null;
-  return scoreRound(state.target, state.rolled, { rerollsLeft: state.rerollsLeft });
+  return scoreRound(target(), state.rolled, { rerollsLeft: state.rerollsLeft });
 }
 
 /** Distance of the digit currently awaiting a decision. */
 export function pendingDistance() {
   if (state?.phase !== 'deciding' || state.pending === null) return null;
-  return distance(state.target[state.index], state.pending);
+  return distance(target()[state.index], state.pending);
 }

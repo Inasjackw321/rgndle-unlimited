@@ -3,77 +3,9 @@
  * about the game loop.
  */
 
-
 import { RANKS, describeRarity, DISTRIBUTION, SAMPLE_SIZE } from './ranks.js';
 
 export const el = (id) => document.getElementById(id);
-
-/** Local stand-in so guest rows fetch nothing from a remote avatar CDN. */
-const PLACEHOLDER_AVATAR =
-  'data:image/svg+xml,' +
-  encodeURIComponent(
-    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">' +
-      '<rect width="32" height="32" rx="16" fill="#2a2a45"/>' +
-      '<text x="16" y="22" font-size="16" text-anchor="middle" fill="#8b90a8">?</text></svg>',
-  );
-
-/* ------------------------------------------------------------------ *
- * Auth chip
- * ------------------------------------------------------------------ */
-
-/**
- * @param {object|null} session
- * @param {object} handlers
- * @param {Function} handlers.mountButton  fills a host element with Google's
- *        own rendered button, which their branding terms require.
- */
-export function renderAuth(session, { onLogout, onSetup, mountButton, configured }) {
-  const slot = el('auth-slot');
-  slot.replaceChildren();
-
-  if (session?.user) {
-    const chip = document.createElement('div');
-    chip.className = 'user-chip';
-
-    const img = document.createElement('img');
-    img.src = session.user.avatar || PLACEHOLDER_AVATAR;
-    img.alt = '';
-    img.loading = 'lazy';
-    img.referrerPolicy = 'no-referrer';
-    img.addEventListener('error', () => {
-      img.src = PLACEHOLDER_AVATAR;
-    });
-
-    const name = document.createElement('span');
-    name.className = 'user-name';
-    name.textContent = session.user.name;
-
-    const out = document.createElement('button');
-    out.type = 'button';
-    out.textContent = 'Sign out';
-    out.addEventListener('click', onLogout);
-
-    chip.append(img, name, out);
-    slot.append(chip);
-    return;
-  }
-
-  // Nothing configured yet: offer the setup flow rather than a dead button.
-  if (!configured) {
-    const setup = document.createElement('button');
-    setup.className = 'setup-btn';
-    setup.type = 'button';
-    setup.textContent = 'Set up sign-in';
-    setup.addEventListener('click', onSetup);
-    slot.append(setup);
-    return;
-  }
-
-  const host = document.createElement('div');
-  host.className = 'google-host';
-  slot.append(host);
-  mountButton(host);
-}
 
 /* ------------------------------------------------------------------ *
  * Notices
@@ -183,7 +115,7 @@ export function showVerdict() {
 }
 
 /* ------------------------------------------------------------------ *
- * Sidebar
+ * The record panels
  * ------------------------------------------------------------------ */
 
 function emptyState(text) {
@@ -191,96 +123,6 @@ function emptyState(text) {
   li.className = 'empty-state';
   li.textContent = text;
   return li;
-}
-
-export function renderBoard(entries, meId, { shared, error, scope = 'daily', onConnect }) {
-  const list = el('board');
-  const note = el('board-note');
-  list.replaceChildren();
-  note.replaceChildren();
-
-  if (shared) {
-    note.textContent =
-      scope === 'daily'
-        ? "Today's board. Everyone played the same target."
-        : 'Best single day, per player, all time.';
-  } else {
-    // Be explicit that this board is solo. "Nobody has played today yet" reads
-    // as though other people exist and simply haven't played, when in fact
-    // nobody else can ever appear on a board held in this browser.
-    const line = document.createElement('div');
-    line.textContent = 'Only you can appear here — this board lives in your browser.';
-    note.append(line);
-
-    if (onConnect) {
-      const cta = document.createElement('button');
-      cta.type = 'button';
-      cta.className = 'connect-btn';
-      cta.innerHTML = '<span aria-hidden="true">🌍</span><span>Play against everyone</span>';
-      cta.addEventListener('click', onConnect);
-      note.append(cta);
-    }
-  }
-
-  if (error) {
-    list.append(emptyState(error));
-    return;
-  }
-  if (!entries.length) {
-    list.append(
-      emptyState(
-        shared
-          ? scope === 'daily'
-            ? 'Nobody has played today yet.'
-            : 'No days played yet.'
-          : "You haven't finished today's target yet.",
-      ),
-    );
-    return;
-  }
-
-  entries.forEach((entry, i) => {
-    const li = document.createElement('li');
-    li.style.animationDelay = `${Math.min(i, 12) * 22}ms`;
-    if (entry.playerId && entry.playerId === meId) li.classList.add('is-you');
-
-    const place = document.createElement('span');
-    place.className = 'place';
-    place.textContent = i < 3 ? ['🥇', '🥈', '🥉'][i] : `${i + 1}`;
-
-    const img = document.createElement('img');
-    img.src = entry.avatar || PLACEHOLDER_AVATAR;
-    img.alt = '';
-    img.loading = 'lazy';
-    img.referrerPolicy = 'no-referrer';
-    img.addEventListener('error', () => {
-      img.src = PLACEHOLDER_AVATAR;
-    });
-
-    const who = document.createElement('div');
-    who.className = 'who';
-    who.textContent = entry.name || 'Anonymous';
-    const sub = document.createElement('small');
-    sub.textContent =
-      entry.bullseyes !== undefined
-        ? `${entry.bullseyes}◎ · dist ${entry.totalDistance}`
-        : entry.digits || '';
-    who.append(sub);
-
-    const rank = RANKS.find((r) => r.label === entry.rank);
-    const badge = document.createElement('span');
-    badge.className = 'badge';
-    badge.textContent = entry.rank || '?';
-    badge.style.color = rank?.color || 'var(--muted)';
-
-    const pts = document.createElement('span');
-    pts.className = 'pts';
-    pts.textContent = Number(entry.score).toLocaleString();
-    pts.style.color = rank?.color || 'var(--text)';
-
-    li.append(place, img, who, badge, pts);
-    list.append(li);
-  });
 }
 
 export function renderHistory(entries) {
@@ -481,20 +323,6 @@ export function toast({ icon = '🏆', label = 'ACHIEVEMENT', name, desc }, dura
  * Controls
  * ------------------------------------------------------------------ */
 
-export function initScopeSwitch(onChange) {
-  const buttons = [...document.querySelectorAll('.scope')];
-  for (const btn of buttons) {
-    btn.addEventListener('click', () => {
-      for (const b of buttons) {
-        const active = b === btn;
-        b.classList.toggle('is-active', active);
-        b.setAttribute('aria-selected', String(active));
-      }
-      onChange(btn.dataset.scope);
-    });
-  }
-}
-
 export function setRollButton({ label, sub, disabled }) {
   const btn = el('roll-btn');
   btn.querySelector('.roll-btn-label').textContent = label;
@@ -555,16 +383,8 @@ export function setStatus(html) {
   el('status').innerHTML = html || '';
 }
 
-export function setPuzzleNumber(n, run = 1) {
-  el('puzzle-no').textContent = run > 1 ? `#${n} · run ${run}` : `#${n}`;
-}
-
-export function setTestBadge(on) {
-  el('test-badge').hidden = !on;
-}
-
-export function showAgain(visible) {
-  el('again-btn').hidden = !visible;
+export function setPuzzleNumber(n) {
+  el('puzzle-no').textContent = `#${n}`;
 }
 
 /**

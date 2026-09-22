@@ -24,7 +24,6 @@
       <div class="brand">
         <span class="brand-mark" aria-hidden="true">🎯</span>
         <h1>GUSSLE<span id="puzzle-no"></span></h1>
-        <span class="test-badge" id="test-badge" hidden>TEST MODE</span>
       </div>
 
       <div class="topbar-actions">
@@ -32,15 +31,11 @@
           <span data-sound-on>🔊</span><span data-sound-off hidden>🔇</span>
         </button>
         <button id="help-btn" class="icon-btn" type="button" title="How to play">?</button>
-        <!-- One door to the leaderboard, history, stats and awards. They are
-             reference material; the game is the page. -->
-        <button id="drawer-btn" class="icon-btn is-wide" type="button" aria-haspopup="dialog" title="Leaderboard, history, stats and awards">
-          <span aria-hidden="true">🏆</span><span class="icon-btn-label">Board</span>
+        <!-- One door to your history, stats and awards. They are reference
+             material; the game is the page. -->
+        <button id="drawer-btn" class="icon-btn is-wide" type="button" aria-haspopup="dialog" title="History, stats and awards">
+          <span aria-hidden="true">🏆</span><span class="icon-btn-label">Record</span>
         </button>
-        <div id="auth-slot" class="auth-slot">
-          <!-- Filled in by ui.renderAuth: Google's rendered button, the signed-in
-               chip, or the setup prompt when no client ID is configured. -->
-        </div>
       </div>
     </header>
 
@@ -86,11 +81,6 @@
             <span class="roll-btn-sub">press space</span>
           </button>
 
-          <button id="again-btn" class="roll-btn is-again" type="button" hidden>
-            <span class="roll-btn-label">PLAY AGAIN</span>
-            <span class="roll-btn-sub">new target</span>
-          </button>
-
           <div class="decision" id="decision" hidden>
             <button id="reroll-btn" class="decision-btn is-reroll" type="button">
               <span class="decision-icon" aria-hidden="true">↻</span>
@@ -132,50 +122,36 @@
 
     <!-- A dialog, not a hand-rolled panel: focus trapping, Escape, backdrop and
          inertness of the page behind all come free and correct. -->
-    <dialog id="drawer" class="drawer" aria-label="Leaderboard, history, stats and awards">
+    <dialog id="drawer" class="drawer" aria-label="History, stats and awards">
       <div class="drawer-head">
         <h2 class="drawer-title">Your record</h2>
         <button class="icon-btn drawer-close" type="button" aria-label="Close">✕</button>
       </div>
       <aside class="sidebar">
         <div class="tabs" role="tablist">
-          <button class="tab is-active" role="tab" data-panel="leaderboard" aria-selected="true">Today</button>
-          <button class="tab" role="tab" data-panel="history" aria-selected="false">History</button>
+          <button class="tab is-active" role="tab" data-panel="history" aria-selected="true">History</button>
           <button class="tab" role="tab" data-panel="stats" aria-selected="false">Stats</button>
           <button class="tab" role="tab" data-panel="awards" aria-selected="false">Awards</button>
         </div>
 
-        <div class="panel is-active" data-panel="leaderboard">
-          <div class="scope-switch" role="tablist" aria-label="Leaderboard scope">
-            <button class="scope is-active" type="button" role="tab" aria-selected="true" data-scope="daily">
-              Today
-            </button>
-            <button class="scope" type="button" role="tab" aria-selected="false" data-scope="all">
-              All-time best
-            </button>
-          </div>
-          <div class="panel-note" id="board-note"></div>
-          <ol class="board" id="board"></ol>
+        <div class="panel is-active" data-panel="history">
+          <ol class="history" id="history"></ol>
+        </div>
 
-          <!-- The boards live in this browser until the Worker is deployed, and
-               "clear site data" is one click away from erasing them. -->
+        <div class="panel" data-panel="stats">
+          <dl class="stats" id="stats"></dl>
+
+          <!-- Your record lives in this browser, and "clear site data" is one
+               click away from erasing it. -->
           <div class="data-row">
             <button type="button" class="share-btn" id="save-data">💾 Save a copy</button>
             <button type="button" class="share-btn" id="restore-data">Restore…</button>
             <input type="file" id="restore-input" accept="application/json,.json" hidden />
           </div>
           <p class="panel-note" id="data-note">
-            Downloads your boards, results, streak and achievements as one file. Restoring merges it
-            in, so two devices add up rather than overwrite.
+            Downloads your results, streak and achievements as one file. Restoring merges it in, so
+            two devices add up rather than overwrite.
           </p>
-        </div>
-
-        <div class="panel" data-panel="history">
-          <ol class="history" id="history"></ol>
-        </div>
-
-        <div class="panel" data-panel="stats">
-          <dl class="stats" id="stats"></dl>
         </div>
 
         <div class="panel" data-panel="awards">
@@ -189,90 +165,6 @@
     </dialog>
 
     <div class="toasts" id="toasts" aria-live="polite" aria-atomic="false"></div>
-
-    <dialog id="setup-dialog" class="dialog">
-      <article>
-        <h2>Set up sign-in</h2>
-        <p>
-          Sign-in needs a Google OAuth client ID. Every &ldquo;Sign in with&hellip;&rdquo; button on the web
-          works this way &mdash; the site owner registers an app with the provider first. Nothing secret is
-          involved: a client ID is public, which is why this game needs no server.
-        </p>
-
-        <h3>1. Create the client ID</h3>
-        <p>
-          In
-          <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer"
-            >Google Cloud &rarr; Credentials</a
-          >, choose <strong>Create credentials &rarr; OAuth client ID</strong>, and pick the
-          <strong>Web application</strong> type.
-        </p>
-
-        <h3>2. Authorise this origin</h3>
-        <p>Under <strong>Authorised JavaScript origins</strong>, add exactly this, then press Create:</p>
-        <div class="copy-field">
-          <code id="setup-origin"></code>
-          <button type="button" class="share-btn" id="copy-origin">Copy</button>
-        </div>
-        <p class="hint">
-          Google authorises an origin, not a full URL &mdash; there is no redirect path to get wrong, and no
-          redirect URI to add.
-        </p>
-
-        <h3>3. Paste the client ID</h3>
-        <form id="setup-form">
-          <label class="field">
-            <span>Google client ID</span>
-            <input
-              id="setup-google-id"
-              type="text"
-              autocomplete="off"
-              spellcheck="false"
-              placeholder="123456-abc.apps.googleusercontent.com"
-            />
-          </label>
-
-          <h3 id="shared-board-heading">Playing against everyone</h3>
-          <p>
-            Out of the box the leaderboard lives in your browser, so only you appear on it. A shared board
-            needs somewhere to store scores. The code is already in this repo &mdash; deploy it and paste the
-            URL below:
-          </p>
-          <pre class="snippet"><code>cd worker
-npx wrangler kv namespace create GUSSLE
-<span class="snippet-note"># paste the returned id into wrangler.toml</span>
-npx wrangler deploy</code></pre>
-          <p class="hint">
-            Free tier is plenty. <code>GOOGLE_CLIENT_ID</code> in <code>wrangler.toml</code> must match the
-            client ID above, or the Worker rejects every sign-in.
-          </p>
-          <label class="field">
-            <span>Leaderboard endpoint</span>
-            <!-- Deliberately type=text: type=url hands validation to the browser,
-                 whose native bubble bypasses the in-dialog error message. -->
-            <input
-              id="setup-endpoint"
-              type="text"
-              inputmode="url"
-              autocomplete="off"
-              spellcheck="false"
-              placeholder="https://gussle-leaderboard.you.workers.dev"
-            />
-          </label>
-          <p class="field-error" id="setup-error" hidden></p>
-          <div class="setup-actions">
-            <button type="submit" class="primary-btn">Save</button>
-            <button type="button" class="share-btn" id="setup-clear">Clear</button>
-          </div>
-        </form>
-
-        <p class="fine-print">
-          Saved in this browser only. To turn sign-in on for everyone who visits, put the same values in
-          <code>js/config.js</code> and redeploy.
-        </p>
-      </article>
-      <button class="dialog-close" type="button">Close</button>
-    </dialog>
 
     <dialog id="help-dialog" class="dialog">
       <article>
@@ -304,12 +196,6 @@ npx wrangler deploy</code></pre>
         <h3>Ranks are real</h3>
         <p id="help-calibration">
           Your rank is your position in a measured distribution, not an arbitrary threshold.
-        </p>
-
-        <h3>Sign-in</h3>
-        <p id="help-setup"></p>
-        <p class="setup-actions">
-          <button type="button" class="share-btn" id="open-setup">Configure sign-in</button>
         </p>
       </article>
       <button class="dialog-close" type="button">Close</button>

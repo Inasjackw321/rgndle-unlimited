@@ -25,8 +25,6 @@ import {
 } from './reels.js';
 import { startStarfield, initParticles, burst, countUp, shake, pressRipple, buzz } from './fx.js';
 import * as audio from './audio.js';
-import * as auth from './auth.js';
-import * as board from './leaderboard.js';
 import * as daily from './daily.js';
 import * as game from './game.js';
 import { expectedScore } from './strategy.js';
@@ -34,12 +32,10 @@ import * as achievements from './achievements.js';
 import * as share from './share.js';
 import * as profile from './profile.js';
 import * as backup from './backup.js';
-import { resolved, overrides, saveOverrides, clearOverrides, isValidGoogleClientId, jsOrigin } from './config.js';
 import * as ui from './ui.js';
 
 const state = {
   busy: false,
-  scope: 'daily',
   history: [],
   countdownTimer: null,
   lastResult: null,
@@ -60,8 +56,6 @@ function random() {
   return pool[poolIndex++] / 4294967296;
 }
 
-const playerId = () => auth.playerKey() || daily.guestId();
-
 /** "press space" is a lie on a phone. Ask the device which one it is. */
 const rollHint = () =>
   window.matchMedia('(hover: none)').matches ? 'tap to roll' : 'press space';
@@ -71,23 +65,32 @@ const rollHint = () =>
  * ------------------------------------------------------------------ */
 
 function loadHistory() {
-  state.history = profile.read(profile.STORES.history, playerId(), []);
+  state.history = profile.read(profile.STORES.history, []);
+}
+
+/** The finished day's row, as history and the share card want it. */
+function entryFor(result, percentile, rank) {
+  return {
+    score: result.total,
+    day: daily.dateKey(),
+    digits: result.display,
+    target: result.targetDisplay,
+    bullseyes: result.bullseyes,
+    totalDistance: result.totalDistance,
+    rerollsLeft: result.rerollsLeft,
+    rank: rank.label,
+    percentile,
+    at: Date.now(),
+  };
 }
 
 function saveResult(entry) {
-  // One row per day, and it's the day's *best*: replaying (test mode) should
-  // never demote a run you already put on the board.
-  const previous = state.history.find((h) => h.day === entry.day);
-  if (previous && previous.score >= entry.score) return;
-  state.history = [entry, ...state.history.filter((h) => h.day !== entry.day)].slice(
-    0,
-    resolved().historyLimit,
-  );
-  profile.write(profile.STORES.history, playerId(), state.history);
+  state.history = profile.mergeHistory(state.history, [entry]);
+  profile.write(profile.STORES.history, state.history);
 }
 
 function readStreak() {
-  return profile.read(profile.STORES.dailyStreak, playerId(), { count: 0, last: null });
+  return profile.read(profile.STORES.dailyStreak, { count: 0, last: null });
 }
 
 /** Increments when today follows yesterday, resets after any gap. */
@@ -96,35 +99,12 @@ function bumpStreak(today = daily.dateKey()) {
   if (record.last === today) return record.count;
   const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
   const count = record.last === yesterday ? record.count + 1 : 1;
-  profile.write(profile.STORES.dailyStreak, playerId(), { count, last: today });
+  profile.write(profile.STORES.dailyStreak, { count, last: today });
   return count;
 }
 
 /* ------------------------------------------------------------------ *
- * Leaderboard
- * ------------------------------------------------------------------ */
-
-async function refreshBoard() {
-  const meId = playerId();
-  try {
-    const entries = await board.listTop(state.scope);
-    ui.renderBoard(entries, meId, {
-      shared: board.isShared(),
-      scope: state.scope,
-      onConnect: () => openSetup({ focus: 'endpoint' }),
-    });
-  } catch (err) {
-    ui.renderBoard([], meId, {
-      shared: board.isShared(),
-      scope: state.scope,
-      error: err.message,
-      onConnect: () => openSetup({ focus: 'endpoint' }),
-    });
-  }
-}
-
-/* ------------------------------------------------------------------ *
- * Painting the board state
+ * Painting the game
  * ------------------------------------------------------------------ */
 
 function stopCountdown() {
@@ -182,7 +162,7 @@ function paintGame({ animateLast = false } = {}) {
 
   setTarget(snap.target);
   ui.renderRerolls(snap.rerollsLeft, REROLLS_PER_DAY);
-  ui.setPuzzleNumber(daily.puzzleNumber(snap.day), snap.run);
+  ui.setPuzzleNumber(daily.puzzleNumber(snap.day));
   paintLive();
 
   // The rulebook line earns its space until you've rolled once, and never
@@ -209,20 +189,11 @@ function paintGame({ animateLast = false } = {}) {
 
   if (snap.phase === 'done') {
     ui.showDecision(false);
-    const unlimited = resolved().testMode;
-    ui.setRollButton({
-      label: unlimited ? 'RUN COMPLETE' : 'DONE FOR TODAY',
-      sub: unlimited ? '' : 'come back tomorrow',
-      disabled: true,
-    });
-    ui.el('roll-btn').hidden = unlimited;
-    ui.showAgain(unlimited);
+    ui.setRollButton({ label: 'DONE FOR TODAY', sub: 'come back tomorrow', disabled: true });
     startCountdown();
     return;
   }
 
-  ui.el('roll-btn').hidden = false;
-  ui.showAgain(false);
   stopCountdown();
 
   if (snap.phase === 'deciding') {
@@ -316,18 +287,6 @@ function keep() {
   paintGame();
 }
 
-function playAgain() {
-  if (state.busy || !resolved().testMode) return;
-  audio.press();
-  const fresh = Array.from({ length: ROLL_LENGTH }, () => rollDigit(random));
-  game.newRun(fresh);
-  ui.clearVerdict();
-  ui.showShare(false);
-  document.querySelector('.machine').classList.remove('is-lit');
-  ui.setRankColor(RANKS[0]);
-  paintGame();
-}
-
 function doReroll() {
   if (state.busy) return;
   const snap = game.snapshot();
@@ -387,7 +346,7 @@ async function finish() {
   }
 
   const streak = bumpStreak(result.day || daily.dateKey());
-  const entry = board.entryFor(result, percentile, rank);
+  const entry = entryFor(result, percentile, rank);
   saveResult(entry);
   loadHistory();
   ui.renderHistory(state.history);
@@ -397,7 +356,6 @@ async function finish() {
   ui.showShare(true);
 
   const unlocked = achievements.evaluate({
-    playerId: playerId(),
     result,
     rank,
     rankIndex,
@@ -411,16 +369,8 @@ async function finish() {
     }, 500 + i * 700);
   });
   if (unlocked.length) {
-    ui.renderAwards(achievements.ACHIEVEMENTS, achievements.progress(playerId()).unlocked);
+    ui.renderAwards(achievements.ACHIEVEMENTS, achievements.progress().unlocked);
   }
-
-  try {
-    await board.submitScore(entry, 'daily');
-    ui.notice(null);
-  } catch (err) {
-    ui.notice(`Could not submit score: ${err.message}`);
-  }
-  await refreshBoard();
 }
 
 /* ------------------------------------------------------------------ *
@@ -439,114 +389,13 @@ function setupHelp() {
     `Your rank is your position among ${SAMPLE_SIZE.toLocaleString()} simulated days played by a ` +
     'solver that always makes the best re-roll decision. Beating the percentile means you got luckier ' +
     'than perfect play, not that you out-thought it.';
-
-  setupHelpText();
-}
-
-function setupHelpText() {
-  const setup = ui.el('help-setup');
-  setup.textContent = resolved().googleClientId
-    ? `Google sign-in is enabled. The leaderboard is ${
-        board.isShared() ? 'shared across all players.' : 'stored on this device only.'
-      }`
-    : 'Google sign-in is not configured yet. It takes about a minute and needs no server — a client ID is public.';
-}
-
-function setupSetupDialog() {
-  const dialog = ui.el('setup-dialog');
-  const form = ui.el('setup-form');
-  const googleIdInput = ui.el('setup-google-id');
-  const endpointInput = ui.el('setup-endpoint');
-  const error = ui.el('setup-error');
-
-  ui.el('setup-origin').textContent = jsOrigin();
-
-  const open = ({ focus = 'client' } = {}) => {
-    const current = overrides();
-    const active = resolved();
-    googleIdInput.value = current.googleClientId || active.googleClientId || '';
-    endpointInput.value = current.leaderboardEndpoint || active.leaderboardEndpoint || '';
-    error.hidden = true;
-    dialog.showModal();
-
-    if (focus === 'endpoint') {
-      // Arrived from "Play against everyone" — start where that answer lives.
-      ui.el('shared-board-heading').scrollIntoView({ block: 'start' });
-      endpointInput.focus();
-    } else {
-      googleIdInput.focus();
-    }
-  };
-
-  ui.el('open-setup').addEventListener('click', () => {
-    ui.el('help-dialog').close();
-    open();
-  });
-
-  dialog.querySelector('.dialog-close').addEventListener('click', () => dialog.close());
-  dialog.addEventListener('click', (e) => {
-    if (e.target === dialog) dialog.close();
-  });
-
-  const copyBtn = ui.el('copy-origin');
-  copyBtn.addEventListener('click', async () => {
-    const ok = await share.copyText(jsOrigin());
-    ui.flashButton(copyBtn, ok ? 'Copied!' : 'Select it');
-  });
-
-  ui.el('setup-clear').addEventListener('click', () => {
-    clearOverrides();
-    auth.logout();
-    googleIdInput.value = '';
-    endpointInput.value = '';
-    error.hidden = true;
-    dialog.close();
-    setupHelpText();
-    paintAuth(auth.currentSession());
-    refreshBoard();
-  });
-
-  const fail = (message, input) => {
-    error.textContent = message;
-    error.hidden = false;
-    input?.focus();
-  };
-
-  form.addEventListener('submit', (e) => {
-    e.preventDefault();
-    const googleId = googleIdInput.value.trim();
-    const endpoint = endpointInput.value.trim();
-
-    if (!googleId && !endpoint) {
-      return fail('Paste a Google client ID, a leaderboard endpoint, or both.', googleIdInput);
-    }
-    if (googleId && !isValidGoogleClientId(googleId)) {
-      return fail(
-        'That does not look like a Google client ID. It ends in .apps.googleusercontent.com — copy the Client ID, not the client secret.',
-        googleIdInput,
-      );
-    }
-    if (endpoint && !/^https?:\/\//.test(endpoint)) {
-      return fail('The leaderboard endpoint must start with https://', endpointInput);
-    }
-    if (!saveOverrides({ googleClientId: googleId, leaderboardEndpoint: endpoint })) {
-      return fail('This browser is blocking storage, so settings cannot be saved here.');
-    }
-
-    dialog.close();
-    setupHelpText();
-    paintAuth(auth.currentSession());
-    refreshBoard();
-  });
-
-  return { open };
 }
 
 /**
- * Saving the boards to a file, and reading one back.
+ * Saving your record to a file, and reading one back.
  *
- * Everything is on-device until the Worker is deployed, so this is the only
- * thing standing between a cleared browser and a lost record.
+ * Everything lives in this browser, so this is the only thing standing between
+ * a cleared browser and a lost record.
  */
 function setupBackup() {
   const saveBtn = ui.el('save-data');
@@ -555,14 +404,14 @@ function setupBackup() {
 
   saveBtn.addEventListener('click', () => {
     const save = backup.collect();
-    const { days, players } = backup.describe(save);
+    const { days, awards } = backup.describe(save);
     backup.download(save, `gussle-save-${daily.dateKey()}.json`);
     ui.flashButton(saveBtn, 'Saved!');
     ui.toast({
       icon: '💾',
       label: 'SAVED',
       name: `${days} day${days === 1 ? '' : 's'} written to a file`,
-      desc: players ? `${players} player${players === 1 ? '' : 's'} on the board` : 'Keep it somewhere safe.',
+      desc: `${awards} achievement${awards === 1 ? '' : 's'} too. Keep it somewhere safe.`,
     });
   });
 
@@ -579,11 +428,10 @@ function setupBackup() {
 
     try {
       const save = backup.parse(await file.text());
-      const { restored, failed } = backup.restore(save, playerId());
+      const { restored, failed } = backup.restore(save);
       if (failed.length) throw new backup.RestoreError('This browser is blocking storage.');
 
       reloadProfile();
-      await refreshBoard();
       ui.flashButton(restoreBtn, 'Restored!');
       const { days } = backup.describe(save);
       ui.toast({
@@ -604,18 +452,15 @@ function setupBackup() {
 }
 
 /**
- * The drawer holding the leaderboard, history, stats and awards.
+ * The drawer holding your history, stats and awards.
  *
- * They are reference material, not part of playing, so they stay shut until
- * asked for. The board is refreshed on open rather than on a timer — nobody
- * needs a live board they aren't looking at.
+ * Reference material, not part of playing, so it stays shut until asked for.
  */
 function setupDrawer() {
   const drawer = ui.el('drawer');
   ui.el('drawer-btn').addEventListener('click', () => {
     audio.press();
     drawer.showModal();
-    refreshBoard();
   });
   drawer.querySelector('.drawer-close').addEventListener('click', () => drawer.close());
   // The dialog element fills its own backdrop area, so a click lands on the
@@ -678,7 +523,6 @@ function setupRollButton() {
 
   pressable(ui.el('keep-btn'), keep);
   pressable(ui.el('reroll-btn'), doReroll);
-  pressable(ui.el('again-btn'), playAgain, { ring: true });
 }
 
 function setupKeyboard() {
@@ -686,7 +530,7 @@ function setupKeyboard() {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     const tag = document.activeElement?.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA') return;
-    if (ui.el('help-dialog').open || ui.el('setup-dialog').open || ui.el('drawer').open) return;
+    if (ui.el('help-dialog').open || ui.el('drawer').open) return;
 
     const ours = e.code === 'Space' || e.code === 'Enter' || e.code === 'KeyR' || e.code === 'Backspace';
     if (!ours) return;
@@ -702,8 +546,7 @@ function setupKeyboard() {
 
     if (e.code === 'Space' || e.code === 'Enter') {
       if (phase === 'deciding') keep();
-      else if (phase === 'done') playAgain();
-      else {
+      else if (phase !== 'done') {
         window.dispatchEvent(new Event('rngdle:press'));
         roll();
       }
@@ -721,11 +564,9 @@ function setupShare() {
   cardBtn.addEventListener('click', async () => {
     if (!state.lastResult) return;
     const { result, rank, percentile } = state.lastResult;
-    const user = auth.currentUser();
     const canvas = share.renderCard(result, rank, percentile, {
       day: daily.dateKey(),
       puzzle: daily.puzzleNumber(),
-      player: user ? user.name : null,
     });
     try {
       const outcome = await share.shareCard(canvas, `gussle-${daily.dateKey()}.png`);
@@ -746,15 +587,15 @@ function setupShare() {
 }
 
 /* ------------------------------------------------------------------ *
- * Identity
+ * Repainting everything from storage
  * ------------------------------------------------------------------ */
 
 function reloadProfile() {
   loadHistory();
-  game.load(playerId());
+  game.load();
   ui.renderHistory(state.history);
   ui.renderStats(state.history, readStreak().count);
-  ui.renderAwards(achievements.ACHIEVEMENTS, achievements.progress(playerId()).unlocked);
+  ui.renderAwards(achievements.ACHIEVEMENTS, achievements.progress().unlocked);
 
   ui.clearVerdict();
   ui.showShare(false);
@@ -779,68 +620,15 @@ function reloadProfile() {
   }
 }
 
-let openSetup = () => {};
-let welcomedPlayer = null;
-
-function paintAuth(session) {
-  ui.renderAuth(session, {
-    configured: auth.isConfigured(),
-    onSetup: () => openSetup(),
-    mountButton: (host) => {
-      auth.mountButton(host).catch((err) => {
-        // Keep the top bar compact; the detail goes in the tooltip.
-        host.textContent = 'Sign-in unavailable';
-        host.title = err.message;
-        host.className = 'google-host is-failed';
-      });
-    },
-    onLogout: () => {
-      auth.logout();
-      welcomedPlayer = null;
-      reloadProfile();
-      refreshBoard();
-    },
-  });
-}
-
-async function afterSignIn(session) {
-  const key = auth.playerKey(session);
-  const isNew = key !== welcomedPlayer;
-  welcomedPlayer = key;
-
-  if (isNew) {
-    const movedScores = board.migrateGuestScores(session);
-    const movedStores = profile.adoptGuestData(daily.guestId(), key);
-    ui.toast({
-      icon: movedScores || movedStores.length ? '📦' : '👋',
-      label: 'SIGNED IN',
-      name: `Welcome, ${auth.displayName(session.user)}`,
-      desc:
-        movedScores || movedStores.length
-          ? 'Your guest progress moved across.'
-          : 'Your progress is saved to this account.',
-    });
-  }
-
-  ui.notice(null);
-  reloadProfile();
-  await refreshBoard();
-}
-
-async function init() {
+function init() {
   startStarfield(ui.el('starfield'));
   initParticles(ui.el('particles'));
 
   const day = daily.dateKey();
   ui.setPuzzleNumber(daily.puzzleNumber(day));
-  ui.setTestBadge(resolved().testMode);
   mountLanes(ui.el('lanes'), daily.dailyTarget(day));
 
   ui.initTabs();
-  ui.initScopeSwitch((scope) => {
-    state.scope = scope;
-    refreshBoard();
-  });
   setupHelp();
   setupDrawer();
   setupBackup();
@@ -848,25 +636,10 @@ async function init() {
   setupKeyboard();
   setupShare();
   setupRollButton();
-  openSetup = setupSetupDialog().open;
 
-  profile.migrateLegacy(daily.guestId());
+  // Fold any account-era storage back into one player before reading it.
+  profile.migrateFromAccounts();
   reloadProfile();
-
-  auth.onSession((session) => {
-    auth.adoptSession(session);
-    afterSignIn(session);
-  });
-  auth.onAuthChange(paintAuth);
-
-  const authError = await auth.initAuth();
-  if (authError) ui.notice(authError);
-  if (auth.currentSession()) {
-    welcomedPlayer = auth.playerKey();
-    reloadProfile();
-  }
-
-  await refreshBoard();
 }
 
 init();

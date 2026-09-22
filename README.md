@@ -3,7 +3,7 @@
 One nine-digit target a day, the same for everyone. Roll the digits one at a time and try to land
 close. Three re-rolls. Spend them wisely.
 
-A static web game — no build step, no server, running on GitHub Pages.
+A static web game — no build step, no server, no accounts. Everything stays in your browser.
 
 ---
 
@@ -21,19 +21,6 @@ is worth burning a re-roll on. Judging the middle is the interesting part.
 The two buttons state the trade in the only unit that matters — **Keep +150** against **a re-roll
 averages +223** (the expected value of an unseen digit). That isn't advice: an unspent re-roll is
 worth 250 at the end and there are only three, so the arithmetic still doesn't decide for you.
-
-### Test mode
-
-`testMode` in `js/config.js` is currently **on**, which lifts the one-game-per-day limit: finishing a
-run offers **Play again** on a fresh random target, and the header reads `#237 · run 2`. Run 1 of a
-day is always the real shared target — only the extra runs are random, so the daily puzzle stays the
-daily puzzle.
-
-Replays can only ever help you. Today's board, the all-time board and the history row all keep your
-**best** run of the day, so a practice run that goes badly can't cost you a place you already earned.
-`tools/verify.mjs` doesn't cover that — the browser test does.
-
-Set `testMode: false` to go back to a true once-a-day puzzle.
 
 ### Digits wrap
 
@@ -109,14 +96,13 @@ against instead.
 ## Layout
 
 The game is the page. One centred column holds the live readout, the machine and the controls, and
-nothing else competes with it — the leaderboard, history, stats and awards live in a drawer behind a
-single **Board** button. It's a `<dialog>`, so focus trapping, Escape, the backdrop and making the page
-behind it inert all come free and correct: a side sheet on a wide screen, a bottom sheet on a phone.
-The board refreshes when the drawer opens rather than on a timer, because nobody needs a live board
-they aren't looking at.
+nothing else competes with it — history, stats and awards live in a drawer behind a single **Record**
+button. It's a `<dialog>`, so focus trapping, Escape, the backdrop and making the page behind it inert
+all come free and correct: a side sheet on a wide screen, a bottom sheet on a phone.
 
-Reclaiming the sidebar's column took the reels from 62px to 70px wide, and the whole game — reels,
-re-roll budget, roll button — now sits above the fold at 375×667 and at 1400×900.
+There used to be a permanent sidebar there. Reclaiming its column took the reels from 62px to 70px
+wide, and the whole game — reels, re-roll budget, roll button — now sits above the fold at 375×667 and
+at 1400×900.
 
 The reels' size is *solved* rather than picked per breakpoint: every piece of horizontal chrome between
 the window edge and a reel — page padding, machine padding, lane padding, the eight gaps, the row-label
@@ -178,43 +164,6 @@ Plain ES modules, so any static file server works.
 `.github/workflows/deploy.yml` runs the verifier before publishing, so changing the scoring engine
 without regenerating the table fails CI rather than silently shipping miscalibrated ranks.
 
-## Signing in
-
-Sign-in uses **Google Identity Services**, which hands the browser a signed JWT ID token directly. No
-token exchange, no client secret, no server — which is what lets it work on a static host.
-
-This deployment ships a client ID in `js/config.js`, so sign-in is live for every visitor. For your
-own fork:
-
-1. In [Google Cloud → Credentials](https://console.cloud.google.com/apis/credentials), create an
-   **OAuth client ID** of type **Web application**.
-2. Under **Authorised JavaScript origins**, add your origin — e.g. `https://<you>.github.io`. That is
-   the *origin* only: no path, no trailing slash, and no redirect URI to add.
-3. Put the client ID into `js/config.js` as `googleClientId`, and into `worker/wrangler.toml` as
-   `GOOGLE_CLIENT_ID` if you deploy the leaderboard. The two must match — the Worker checks that every
-   token was issued for exactly this client.
-
-You can also enter it in-game via **Set up sign-in**, which stores it for that browser only. A
-per-browser value overrides `config.js`; **Clear** removes it and falls back.
-
-Google ID tokens expire in about an hour, so identity and token lifetimes are tracked separately: your
-profile stays signed in for 30 days locally, while the leaderboard silently renews the token before
-submitting a score.
-
-If Google Identity Services can't be reached, the sign-in slot says so and the game stays fully
-playable as a guest.
-
-## What signing in gets you
-
-Results, achievements, streak and **today's in-progress game** are stored per identity, namespaced by
-player key (`gussle_history::google:1098765…`). Signing in swaps the whole profile rather than just
-changing the name on the board, so two people sharing a browser never see each other's progress — or
-each other's half-finished day.
-
-Guest progress is **moved** onto your account the first time you sign in. It's a move rather than a
-copy on purpose: if the guest profile survived, the next person to sign in on a shared browser would
-inherit the same session.
-
 ## Anti-rewind
 
 Every state transition is written to storage the moment it happens — most importantly the pending
@@ -222,87 +171,42 @@ roll, before you've decided on it. If that only lived in memory, reloading the p
 would hand out a free re-roll, which is exactly what the three-per-day budget exists to prevent. There
 is a browser test for it.
 
-## Leaderboard
+## Your record
+
+There are no accounts and no leaderboard. Results, achievements, streak and today's in-progress game
+live in this browser, and that's all — nothing is sent anywhere, and the game works offline after the
+first load.
+
 
 ### Saving it
 
-The boards live in this browser, and "clear site data" is one click away from erasing them — on a new
-phone they were never there at all. **Save a copy** in the leaderboard panel downloads your boards,
-results, streak and achievements as one JSON file; **Restore…** reads one back.
+"Clear site data" is one click away from erasing all of it, and on a new phone it was never there.
+**Save a copy** under **Record → Stats** downloads your results, streak and achievements as one JSON
+file; **Restore…** reads one back.
 
 Restoring **merges**, it doesn't replace, so two devices add up to one record and a file from last
 month can't undo this morning. Every conflict resolves in the direction that can't lose anything: the
-higher score per player and per day, the longer streak, the earlier unlock. Today's board only merges
-rows from the same day, because scores from a different target aren't comparable.
+better score per day, the longer streak, the earlier unlock. The rules live in `js/profile.js` so the
+same ones apply to a save file and to the account-era migration below.
 
-Two things are deliberately left out of the file. `gussle_day` — the in-progress game — because
-letting a file overwrite it would hand back re-rolls you had already spent, which is the exact rewind
-the day-state design exists to prevent. And anything under `rngdle_*`, because that is the session
-token and a signed-in token has no business in a file you might email to yourself.
+The in-progress game is deliberately left out. Letting a file overwrite it would hand back re-rolls
+you had already spent, which is the exact rewind the day-state design exists to prevent.
 
-Guest identities are re-homed on the way in. An account key (`google:1098765…`) means the same person
-everywhere, so it restores verbatim; a guest key is a UUID minted per browser and names *that*
-browser's guest, so it lands on whoever is playing here instead. Without that, restoring onto a new
-device files your whole record under an identity that device never uses and the boards come back
-looking empty.
+### Upgrading from the account era
 
-### Playing against other people
+Progress used to be filed under a player key — `gussle_history::google:1098765…` for a signed-in
+account, a per-browser UUID for a guest. With sign-in gone none of those keys is reachable, so on
+first load they are **merged** into one record rather than picked between: someone who played partly
+signed in and partly as a guest gets all of it back. The exception is the in-progress game, which
+can't be merged — the copy of today that got furthest wins, so the migration can never hand back a
+spent re-roll either. Save files written by the old version restore the same way.
 
-By default the boards live in `localStorage` — your best run of today and your best day ever, per
-device. The
-panel says so plainly, because a solo board that says "nobody has played today yet" reads as though
-other people exist and simply haven't shown up.
-
-To see everyone else you need somewhere to store scores. Deploy the Cloudflare Worker in `worker/`,
-then paste its URL into **Play against everyone** in the leaderboard panel (or set
-`leaderboardEndpoint` in `js/config.js` to turn it on for every visitor):
-
-```bash
-cd worker
-npx wrangler kv namespace create GUSSLE   # paste the id into wrangler.toml
-# set GOOGLE_CLIENT_ID in wrangler.toml, or every sign-in is rejected
-npx wrangler deploy
-```
-
-Sign-in is not required to *read* a shared board, only to post to it.
-
-The whole shared path is covered by a test that runs the real `worker/src/index.js` in Node against an
-in-memory KV, with Google's JWKS served from a locally generated key so the Worker's actual RS256
-verification runs. It drives the browser against that: several players appear on the board, ranked
-correctly, with your own row highlighted.
-
-### Channel announcements
-
-The Worker can post big results to a Discord channel. The webhook URL is a **Worker secret**, never
-client config, so nobody can read it out of the page:
-
-```bash
-npx wrangler secret put ANNOUNCE_WEBHOOK
-```
-
-`ANNOUNCE_MIN_RANK` in `wrangler.toml` sets the threshold. Announcements fire with `ctx.waitUntil`, so
-a Discord outage never delays or fails a score submission.
-
-### Trust model — please read before deploying the Worker
-
-**Identity is verified properly.** Every Google ID token has its RS256 signature checked against
-Google's published keys, with issuer, audience and expiry enforced.
-
-**The score is recomputed server-side** from the submitted digits and the day's target, which the
-Worker derives itself. A score can never disagree with the digits it claims, and the target can't be
-fudged.
-
-**What the Worker cannot check is whether those digits were honestly rolled.** The rolls happen in the
-browser, so a determined player can submit nine digits they simply chose. Closing that means having
-the Worker issue each roll on request — perfectly doable on top of what's here, and the natural next
-step if the board ever matters enough to be worth cheating at.
-
-## Layout
+## Files
 
 ```
 index.html                  markup and DOM contract (the game, plus the drawer it hides)
 styles.css                  all visuals and animation
-js/scoring.js               distance-based scoring — pure, runs in browser, Worker and Node alike
+js/scoring.js               distance-based scoring — pure, runs in the browser and in Node
 js/strategy.js              the solved MDP: optimal re-roll policy and reference play
 js/percentiles.js           GENERATED quantile table
 js/ranks.js                 score -> percentile -> rank
@@ -313,17 +217,13 @@ js/achievements.js          achievement definitions and unlock state
 js/share.js                 spoiler-free grid and PNG card
 js/fx.js                    starfield, particle bursts, count-up, screen shake
 js/audio.js                 synthesised sound (no audio files)
-js/auth.js                  sign-in facade and session store
-js/google.js                Google Identity Services, JWT ID tokens
-js/profile.js               per-identity storage and guest adoption
-js/leaderboard.js           local and remote board adapters
+js/profile.js               on-device storage and the merge rules
 js/backup.js                save to a file, restore by merging
 js/ui.js                    rendering
 js/main.js                  game loop and wiring
 tools/gen-percentiles.mjs   Monte Carlo of optimal play -> js/percentiles.js
 tools/verify.mjs            calibration and fairness checks (runs in CI)
 tools/serve.mjs             local dev server
-worker/                     optional Cloudflare Worker leaderboard
 ```
 
 Accessibility: lanes expose their state via `aria-live`, the re-roll budget is announced, and

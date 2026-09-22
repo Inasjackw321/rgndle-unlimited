@@ -1,16 +1,18 @@
 /**
- * Per-identity storage.
+ * On-device storage.
  *
- * Signing in should give you *your* account, not just a different name on the
- * leaderboard. Results, achievements, streaks and today's in-progress game are
- * therefore namespaced by player key, so two people sharing a browser — or one
- * person with a guest session and a signed-in one — never see each other's
- * progress or each other's half-finished day.
+ * One player per browser: results, achievements, streak and today's
+ * in-progress game. There are no accounts, so there is nothing to namespace
+ * against — the keys are bare.
  *
- * Storage keys look like `gussle_history::google:1098765…`.
+ * The merge rules live here too, because both the account migration below and
+ * the save files in `backup.js` need them to agree. Every one resolves a
+ * conflict in the direction that cannot lose something: the better score, the
+ * longer streak, the earlier unlock.
  */
 
-const LEGACY_MIGRATED = 'gussle_legacy_migrated';
+/** Results kept in the history panel. */
+export const HISTORY_LIMIT = 50;
 
 export const STORES = {
   history: 'gussle_history',
@@ -20,104 +22,148 @@ export const STORES = {
   dayState: 'gussle_day',
 };
 
-const scopedKey = (base, playerId) => `${base}::${playerId}`;
-
-export function read(base, playerId, fallback) {
+export function read(key, fallback = null) {
   try {
-    const raw = localStorage.getItem(scopedKey(base, playerId));
-    return raw ? JSON.parse(raw) : fallback;
+    const raw = localStorage.getItem(key);
+    return raw === null ? fallback : JSON.parse(raw);
   } catch {
     return fallback;
   }
 }
 
-export function write(base, playerId, value) {
+export function write(key, value) {
   try {
-    localStorage.setItem(scopedKey(base, playerId), JSON.stringify(value));
+    localStorage.setItem(key, JSON.stringify(value));
     return true;
   } catch {
     return false;
   }
 }
 
-function hasData(base, playerId) {
+function remove(key) {
   try {
-    return localStorage.getItem(scopedKey(base, playerId)) !== null;
+    localStorage.removeItem(key);
   } catch {
-    return false;
+    /* nothing to do about it */
   }
 }
 
-/**
- * Moves a guest's progress onto their account the first time they sign in, so
- * signing in never looks like it wiped everything.
- *
- * This is a *move*, not a copy. The guest profile is emptied afterwards, which
- * matters when a browser is shared: without it, the next person to sign in
- * would inherit the same guest session all over again and start with someone
- * else's history and achievements.
- *
- * Only fills stores the account hasn't got yet — an established account keeps
- * its own history rather than having a stranger's guest session merged in.
- *
- * @returns {string[]} names of the stores that were moved
- */
-export function adoptGuestData(guestPlayerId, accountPlayerId) {
-  if (!guestPlayerId || !accountPlayerId || guestPlayerId === accountPlayerId) return [];
+/* ------------------------------------------------------------------ *
+ * Merge rules
+ * ------------------------------------------------------------------ */
 
-  const moved = [];
-  for (const [name, base] of Object.entries(STORES)) {
-    if (!hasData(base, guestPlayerId)) continue;
+const scoreOf = (row) => Number(row?.score) || 0;
 
-    // The account already has its own progress for this store — leave both
-    // sides alone rather than overwriting or merging.
-    if (hasData(base, accountPlayerId)) continue;
+/** One row per day, keeping the better attempt at each, newest first. */
+export function mergeHistory(mine, theirs) {
+  const best = new Map();
+  for (const row of [...(mine || []), ...(theirs || [])]) {
+    if (!row?.day) continue;
+    const standing = best.get(row.day);
+    if (!standing || scoreOf(standing) < scoreOf(row)) best.set(row.day, row);
+  }
+  return [...best.values()]
+    .sort((a, b) => String(b.day).localeCompare(String(a.day)))
+    .slice(0, HISTORY_LIMIT);
+}
 
-    const value = read(base, guestPlayerId, null);
-    if (value === null) continue;
-    if (!write(base, accountPlayerId, value)) continue;
+/** Union of unlocks, keeping the earlier timestamp — you earned it when you earned it. */
+export function mergeAchievements(mine, theirs) {
+  const out = { ...(mine || {}) };
+  for (const [id, at] of Object.entries(theirs || {})) {
+    if (!(id in out) || Number(at) < Number(out[id])) out[id] = at;
+  }
+  return out;
+}
 
-    try {
-      localStorage.removeItem(scopedKey(base, guestPlayerId));
-    } catch {
-      /* the copy succeeded, which is the part that matters */
+export function mergeStreak(mine, theirs) {
+  if (!theirs) return mine;
+  if (!mine) return theirs;
+  return Number(theirs.count) > Number(mine.count) ? theirs : mine;
+}
+
+/* ------------------------------------------------------------------ *
+ * Migration off the account-era layout
+ * ------------------------------------------------------------------ */
+
+const MIGRATED = 'gussle_single_player';
+
+/** Keys left behind by sign-in and the leaderboard, both now gone. */
+const OBSOLETE = [
+  'rngdle_session',
+  'rngdle_has_signed_in',
+  'rngdle_google_client_id',
+  'rngdle_endpoint',
+  'gussle_best',
+  'gussle_today',
+  'gussle_guest_id',
+  'gussle_legacy_migrated',
+];
+
+function namespacedKeys(base) {
+  const keys = [];
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key?.startsWith(`${base}::`)) keys.push(key);
     }
-    moved.push(name);
+  } catch {
+    /* storage unavailable */
   }
-  return moved;
+  return keys;
 }
 
 /**
- * One-time upgrade from the pre-namespacing layout, where everything lived
- * under a bare key shared by every identity. Existing progress becomes the
- * guest's, which is where it actually came from.
+ * Folds the old per-identity stores back into one.
+ *
+ * Progress used to be filed under a player key — `gussle_history::google:1098…`
+ * for an account, a per-browser UUID for a guest. With sign-in gone, none of
+ * those keys is reachable any more, so the data is merged rather than picked
+ * between: one person playing partly signed in and partly as a guest should get
+ * all of it back, and merging can't lose a day that picking a winner would.
+ *
+ * The one exception is the in-progress game, which can't be merged — the
+ * furthest-along state for today wins, so this can never hand back a re-roll
+ * that was already spent.
  */
-export function migrateLegacy(guestPlayerId) {
-  try {
-    if (localStorage.getItem(LEGACY_MIGRATED)) return false;
-  } catch {
-    return false;
-  }
+export function migrateFromAccounts() {
+  if (read(MIGRATED)) return false;
 
   let moved = false;
-  for (const base of Object.values(STORES)) {
-    try {
-      const legacy = localStorage.getItem(base);
-      if (legacy === null) continue;
-      if (!hasData(base, guestPlayerId)) {
-        localStorage.setItem(scopedKey(base, guestPlayerId), legacy);
-        moved = true;
-      }
-      localStorage.removeItem(base);
-    } catch {
-      /* keep going; a single failed key shouldn't block the rest */
+  const mergers = {
+    [STORES.history]: mergeHistory,
+    [STORES.achievements]: mergeAchievements,
+    [STORES.dailyStreak]: mergeStreak,
+  };
+
+  for (const [base, merge] of Object.entries(mergers)) {
+    const keys = namespacedKeys(base);
+    if (!keys.length) continue;
+    let merged = read(base);
+    for (const key of keys) {
+      merged = merge(merged, read(key));
+      remove(key);
+    }
+    if (merged !== null && merged !== undefined) {
+      write(base, merged);
+      moved = true;
     }
   }
 
-  try {
-    localStorage.setItem(LEGACY_MIGRATED, '1');
-  } catch {
-    /* ignore */
+  // Day state: keep whichever copy of *today* got furthest.
+  const dayKeys = namespacedKeys(STORES.dayState);
+  if (dayKeys.length) {
+    const progress = (s) => (Array.isArray(s?.rolled) ? s.rolled.length : -1);
+    let best = read(STORES.dayState);
+    for (const key of dayKeys) {
+      const candidate = read(key);
+      if (candidate && (!best || progress(candidate) > progress(best))) best = candidate;
+      remove(key);
+    }
+    if (best) write(STORES.dayState, best);
   }
+
+  for (const key of OBSOLETE) remove(key);
+  write(MIGRATED, 1);
   return moved;
 }

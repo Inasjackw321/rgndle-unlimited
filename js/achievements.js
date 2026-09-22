@@ -100,8 +100,8 @@ export const ACHIEVEMENTS = [
 
 /* ------------------------------------------------------------------ */
 
-export function loadUnlocked(playerId) {
-  return read(STORES.achievements, playerId, {});
+export function loadUnlocked() {
+  return read(STORES.achievements, {});
 }
 
 /**
@@ -109,7 +109,7 @@ export function loadUnlocked(playerId) {
  * @returns {Array} the definitions unlocked by *this* day
  */
 export function evaluate(ctx) {
-  const unlocked = loadUnlocked(ctx.playerId);
+  const unlocked = loadUnlocked();
   const fresh = [];
 
   for (const achievement of ACHIEVEMENTS) {
@@ -126,11 +126,11 @@ export function evaluate(ctx) {
     }
   }
 
-  if (fresh.length) write(STORES.achievements, ctx.playerId, unlocked);
+  if (fresh.length) write(STORES.achievements, unlocked);
   return fresh;
 }
 
-export function progress(playerId) {
-  const unlocked = loadUnlocked(playerId);
+export function progress() {
+  const unlocked = loadUnlocked();
   return { unlocked, count: Object.keys(unlocked).length, total: ACHIEVEMENTS.length };
 }

@@ -64,7 +64,7 @@ function fitText(ctx, text, maxWidth, { weight, sizes, family }) {
 /**
  * Draws a share card. Returns a canvas so callers can choose PNG or blob.
  */
-export function renderCard(result, rank, percentile, { day = null, puzzle = null, player = null } = {}) {
+export function renderCard(result, rank, percentile, { day = null, puzzle = null } = {}) {
   const canvas = document.createElement('canvas');
   canvas.width = W;
   canvas.height = H;
@@ -91,14 +91,6 @@ export function renderCard(result, rank, percentile, { day = null, puzzle = null
   ctx.letterSpacing = '4px';
   ctx.fillText(puzzle ? `GUSSLE #${puzzle}` : 'GUSSLE', 60, 66);
   ctx.letterSpacing = '0px';
-
-  if (player) {
-    ctx.textAlign = 'right';
-    ctx.fillStyle = '#6b7085';
-    ctx.font = `500 20px ${sans}`;
-    ctx.fillText(player, W - 60, 66);
-    ctx.textAlign = 'left';
-  }
 
   /* Target row, then your row, then the distance chips — the same vertical
      story the game itself tells. */

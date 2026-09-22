@@ -1,66 +1,38 @@
 /**
- * Saving and restoring what this browser knows about you.
+ * Saving what this browser knows about you, and reading it back.
  *
- * The boards live in `localStorage` until someone deploys the Worker, and
- * localStorage is one "clear site data" away from gone — on a new phone it was
- * never there at all. This writes the lot to a file you keep, and reads it back.
+ * Everything is on-device, and localStorage is one "clear site data" away from
+ * gone — on a new phone it was never there at all. This writes your results,
+ * streak and achievements to a file you keep.
  *
  * Restoring **merges**, it doesn't replace. Two devices should add up to one
- * record, and a file from last month shouldn't undo this morning. Every merge
- * rule below resolves a conflict in the direction that can't lose something:
- * the higher score, the longer streak, the earlier unlock.
+ * record, and a file from last month shouldn't undo this morning. The merge
+ * rules live in `profile.js` so the same ones apply everywhere.
  */
 
-import { STORES } from './profile.js';
-import { resolved } from './config.js';
+import {
+  STORES,
+  read,
+  write,
+  mergeHistory,
+  mergeAchievements,
+  mergeStreak,
+} from './profile.js';
 
 export const FORMAT = 'gussle-save';
-export const VERSION = 1;
-
-/** The all-time board and today's board, both device-wide rather than per-identity. */
-const BOARD_KEYS = ['gussle_best', 'gussle_today'];
+export const VERSION = 2;
 
 /**
- * Per-identity stores worth keeping. Deliberately not `gussle_day`: that is the
- * in-progress game, and letting a file overwrite it would hand out re-rolls you
- * had already spent — the exact rewind the whole day-state design exists to
- * prevent. Nothing from `rngdle_*` either; that is the session token and the
- * per-browser config, and a signed-in token has no business in a file you might
- * email to yourself.
+ * What goes in the file. Deliberately not `gussle_day`: that is the
+ * in-progress game, and letting a file overwrite it would hand out re-rolls
+ * you had already spent — the exact rewind the day-state design exists to
+ * prevent.
  */
-const PROFILE_BASES = [STORES.history, STORES.achievements, STORES.dailyStreak];
-
-const readJSON = (key, fallback = null) => {
-  try {
-    const raw = localStorage.getItem(key);
-    return raw === null ? fallback : JSON.parse(raw);
-  } catch {
-    return fallback;
-  }
+const MERGERS = {
+  [STORES.history]: mergeHistory,
+  [STORES.achievements]: mergeAchievements,
+  [STORES.dailyStreak]: mergeStreak,
 };
-
-const writeJSON = (key, value) => {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-    return true;
-  } catch {
-    return false;
-  }
-};
-
-/** Every stored key that starts with one of the per-identity bases. */
-function profileKeys() {
-  const keys = [];
-  try {
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (PROFILE_BASES.some((base) => key === base || key.startsWith(`${base}::`))) keys.push(key);
-    }
-  } catch {
-    /* storage unavailable — an empty save is still a valid save */
-  }
-  return keys;
-}
 
 /* ------------------------------------------------------------------ *
  * Export
@@ -68,8 +40,8 @@ function profileKeys() {
 
 export function collect() {
   const data = {};
-  for (const key of [...BOARD_KEYS, ...profileKeys()]) {
-    const value = readJSON(key);
+  for (const key of Object.keys(MERGERS)) {
+    const value = read(key);
     if (value !== null) data[key] = value;
   }
   return { format: FORMAT, version: VERSION, savedAt: new Date().toISOString(), data };
@@ -77,17 +49,12 @@ export function collect() {
 
 /** Rough shape of what's inside, for the confirmation line. */
 export function describe(save) {
-  const data = save?.data || {};
-  const days = new Set();
-  let players = 0;
-
-  for (const [key, value] of Object.entries(data)) {
-    if (key.startsWith(STORES.history) && Array.isArray(value)) {
-      for (const row of value) if (row?.day) days.add(row.day);
-    }
-    if (key === 'gussle_best' && Array.isArray(value)) players = value.length;
-  }
-  return { days: days.size, players };
+  const history = save?.data?.[STORES.history];
+  const awards = save?.data?.[STORES.achievements];
+  return {
+    days: Array.isArray(history) ? history.length : 0,
+    awards: awards ? Object.keys(awards).length : 0,
+  };
 }
 
 export function download(save, filename) {
@@ -101,99 +68,10 @@ export function download(save, filename) {
 }
 
 /* ------------------------------------------------------------------ *
- * Merge rules
- * ------------------------------------------------------------------ */
-
-const scoreOf = (row) => Number(row?.score) || 0;
-
-/** One row per key, keeping whichever scored higher. */
-function mergeByBest(mine, theirs, keyOf) {
-  const out = new Map();
-  for (const row of [...(mine || []), ...(theirs || [])]) {
-    if (!row) continue;
-    const id = keyOf(row);
-    if (id === undefined || id === null) continue;
-    const standing = out.get(id);
-    if (!standing || scoreOf(standing) < scoreOf(row)) out.set(id, row);
-  }
-  return [...out.values()].sort((a, b) => scoreOf(b) - scoreOf(a));
-}
-
-/**
- * Today's board is only comparable within one day. A file saved yesterday holds
- * yesterday's rows under yesterday's target; merging those into today would put
- * scores from a different puzzle on the same board.
- */
-function mergeDailyBoard(mine, theirs) {
-  const day = mine?.day || theirs?.day || null;
-  if (!day) return null;
-  const rows = [
-    ...(mine?.day === day ? mine.entries || [] : []),
-    ...(theirs?.day === day ? theirs.entries || [] : []),
-  ];
-  return { day, entries: mergeByBest(rows, [], (row) => row.playerId) };
-}
-
-/** One row per day, keeping the better attempt at each. */
-function mergeHistory(mine, theirs) {
-  return mergeByBest(mine, theirs, (row) => row.day)
-    .sort((a, b) => String(b.day).localeCompare(String(a.day)))
-    .slice(0, resolved().historyLimit);
-}
-
-/** Union of unlocks, keeping the earlier timestamp — you earned it when you earned it. */
-function mergeAchievements(mine, theirs) {
-  const out = { ...(mine || {}) };
-  for (const [id, at] of Object.entries(theirs || {})) {
-    if (!(id in out) || Number(at) < Number(out[id])) out[id] = at;
-  }
-  return out;
-}
-
-function mergeStreak(mine, theirs) {
-  if (!theirs) return mine;
-  if (!mine) return theirs;
-  return Number(theirs.count) > Number(mine.count) ? theirs : mine;
-}
-
-/* ------------------------------------------------------------------ *
  * Import
  * ------------------------------------------------------------------ */
 
 export class RestoreError extends Error {}
-
-/**
- * Is this player key the same person on any device?
- *
- * Account keys look like `google:1098765…` and mean the same thing everywhere.
- * A guest key is a UUID minted per browser, so the one in the file names *that*
- * browser's guest and matches nothing here — restoring it verbatim would file
- * your record under an identity this device never uses, and the boards would
- * come back looking empty. Guest-scoped data is re-homed onto whoever is
- * playing here instead, which is what "restore my record" means.
- */
-const isPortableId = (id) => id.includes(':');
-
-/** The identity part of `gussle_history::google:123`, or null for a bare key. */
-function scopeOf(key, base) {
-  return key.length > base.length ? key.slice(base.length + 2) : null;
-}
-
-function targetKey(key, base, currentPlayerId) {
-  const scope = scopeOf(key, base);
-  if (!scope || isPortableId(scope)) return key;
-  return currentPlayerId ? `${base}::${currentPlayerId}` : key;
-}
-
-/** Board rows carry the identity that earned them; guests get re-homed too. */
-function rehomeRows(rows, currentPlayerId) {
-  if (!Array.isArray(rows) || !currentPlayerId) return rows;
-  return rows.map((row) =>
-    row && row.playerId && !isPortableId(row.playerId)
-      ? { ...row, playerId: currentPlayerId }
-      : row,
-  );
-}
 
 export function parse(text) {
   let save;
@@ -217,47 +95,28 @@ export function parse(text) {
 /**
  * Merges a parsed save into this browser.
  *
- * @param save             a value from `parse()`
- * @param currentPlayerId  who is playing here, for re-homing guest-scoped data
+ * Version 1 files were written when the game still had accounts, so their keys
+ * carry a player suffix (`gussle_history::google:1098…`). The suffix is dropped
+ * and everything under the same store merges together, which is what those
+ * identities collapsed into anyway.
+ *
  * @returns {{restored: string[], failed: string[]}}
  */
-export function restore(save, currentPlayerId = null) {
+export function restore(save) {
   const restored = new Set();
   const failed = new Set();
 
-  // Each write reads the target key back first, so two guest identities in one
-  // file — or two files restored in a row — accumulate instead of clobbering.
-  const apply = (key, merge) => {
-    const merged = merge(readJSON(key));
-    if (merged === null || merged === undefined) return;
-    if (writeJSON(key, merged)) restored.add(key);
-    else failed.add(key);
-  };
+  for (const [rawKey, incoming] of Object.entries(save.data)) {
+    const base = rawKey.split('::')[0];
+    const merge = MERGERS[base];
+    if (!merge) continue; // anything else in the file is ignored, not trusted
 
-  const isStore = (key, base) => key === base || key.startsWith(`${base}::`);
-
-  for (const [key, incoming] of Object.entries(save.data)) {
-    if (key === 'gussle_best') {
-      const rows = rehomeRows(incoming, currentPlayerId);
-      apply(key, (mine) => mergeByBest(mine, rows, (row) => row.playerId));
-    } else if (key === 'gussle_today') {
-      const board = incoming && {
-        ...incoming,
-        entries: rehomeRows(incoming.entries, currentPlayerId),
-      };
-      apply(key, (mine) => mergeDailyBoard(mine, board));
-    } else if (isStore(key, STORES.history)) {
-      apply(targetKey(key, STORES.history, currentPlayerId), (mine) => mergeHistory(mine, incoming));
-    } else if (isStore(key, STORES.achievements)) {
-      apply(targetKey(key, STORES.achievements, currentPlayerId), (mine) =>
-        mergeAchievements(mine, incoming),
-      );
-    } else if (isStore(key, STORES.dailyStreak)) {
-      apply(targetKey(key, STORES.dailyStreak, currentPlayerId), (mine) =>
-        mergeStreak(mine, incoming),
-      );
-    }
-    // Anything else in the file is ignored rather than trusted.
+    // Read back per key so several suffixed entries accumulate rather than
+    // clobber each other.
+    const merged = merge(read(base), incoming);
+    if (merged === null || merged === undefined) continue;
+    if (write(base, merged)) restored.add(base);
+    else failed.add(base);
   }
 
   return { restored: [...restored], failed: [...failed] };

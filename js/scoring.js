@@ -5,9 +5,9 @@
  * the digits one at a time and try to land close to the target. After each roll
  * you either keep it or spend one of three daily re-rolls on that digit.
  *
- * Pure, dependency-free and DOM-free so the exact same code runs in the browser,
- * in the Worker, and in tools/. Any change here invalidates the percentile
- * table: re-run `npm run percentiles` afterwards.
+ * Pure, dependency-free and DOM-free so the exact same code runs in the browser
+ * and in tools/. Any change here invalidates the percentile table: re-run
+ * `npm run percentiles` afterwards.
  */
 
 export const ROLL_LENGTH = 9;

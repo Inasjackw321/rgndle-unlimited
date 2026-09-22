@@ -68,17 +68,4 @@ export function puzzleNumber(day = dateKey()) {
 
 /* --- Stable per-browser identity for guests ------------------------ */
 
-const GUEST_KEY = 'gussle_guest_id';
 
-export function guestId() {
-  try {
-    let id = localStorage.getItem(GUEST_KEY);
-    if (!id) {
-      id = crypto.randomUUID();
-      localStorage.setItem(GUEST_KEY, id);
-    }
-    return id;
-  } catch {
-    return 'guest';
-  }
-}
