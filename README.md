@@ -1,4 +1,4 @@
-# Gussle
+# Guessle
 
 One nine-digit target a day, the same for everyone. Roll the digits one at a time and try to land
 close. Three re-rolls. Spend them wisely.
@@ -138,7 +138,7 @@ claims the key first and decides what to do with it second.
 so posting your result can't hand the answers to someone still playing:
 
 ```
-Gussle #237 — ETERNAL
+Guessle #237 — ETERNAL
 🟩🟩🟨🟩🟩🟩🟩🟥🟩
 7/9 exact · distance 5 · 73,492 pts
 top 0.00396% · 1 in 25,279
@@ -192,14 +192,22 @@ same ones apply to a save file and to the account-era migration below.
 The in-progress game is deliberately left out. Letting a file overwrite it would hand back re-rolls
 you had already spent, which is the exact rewind the day-state design exists to prevent.
 
-### Upgrading from the account era
+### Upgrading from older versions
 
-Progress used to be filed under a player key — `gussle_history::google:1098765…` for a signed-in
-account, a per-browser UUID for a guest. With sign-in gone none of those keys is reachable, so on
-first load they are **merged** into one record rather than picked between: someone who played partly
-signed in and partly as a guest gets all of it back. The exception is the in-progress game, which
-can't be merged — the copy of today that got furthest wins, so the migration can never hand back a
-spent re-roll either. Save files written by the old version restore the same way.
+Two things moved. Progress used to be filed under a player key —
+`gussle_history::google:1098765…` for a signed-in account, a per-browser UUID for a guest — and with
+sign-in gone none of those keys is reachable. Then the game was renamed, taking the `gussle_` prefix
+with it.
+
+`migrate()` in `js/profile.js` handles both in one pass on first load, **merging** everything it finds
+rather than picking between: someone who played partly signed in and partly as a guest gets all of it
+back. The exception is the in-progress game, which can't be merged — the copy of today that got
+furthest wins, so the migration can never hand back a spent re-roll. Save files written by either
+older version restore the same way.
+
+One thing deliberately kept its old spelling: the string that seeds the daily target. It isn't a name
+anyone sees, it's the input that decides every past and future puzzle, so changing it would deal a
+different target for today mid-game and renumber the whole sequence.
 
 ## Files
 

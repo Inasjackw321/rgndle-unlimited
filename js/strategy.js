@@ -1,7 +1,7 @@
 /**
  * Optimal play, solved exactly.
  *
- * "Should I burn a re-roll on this?" is the only real decision in Gussle, and
+ * "Should I burn a re-roll on this?" is the only real decision in Guessle, and
  * it has a correct answer. The game is a small Markov decision process, so we
  * can solve it rather than guess at it:
  *

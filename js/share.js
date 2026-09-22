@@ -16,7 +16,7 @@ const DISTANCE_SQUARES = ['🟩', '🟨', '🟨', '🟧', '🟥', '⬛'];
 export function shareText(result, rank, percentile, { puzzle = null } = {}) {
   const rarity = describeRarity(percentile);
   const grid = result.distances.map((d) => DISTANCE_SQUARES[d]).join('');
-  const header = puzzle ? `Gussle #${puzzle}` : 'Gussle';
+  const header = puzzle ? `Guessle #${puzzle}` : 'Guessle';
 
   return [
     `${header} — ${rank.label}`,
@@ -89,7 +89,7 @@ export function renderCard(result, rank, percentile, { day = null, puzzle = null
   ctx.font = `600 22px ${sans}`;
   ctx.textAlign = 'left';
   ctx.letterSpacing = '4px';
-  ctx.fillText(puzzle ? `GUSSLE #${puzzle}` : 'GUSSLE', 60, 66);
+  ctx.fillText(puzzle ? `GUESSLE #${puzzle}` : 'GUESSLE', 60, 66);
   ctx.letterSpacing = '0px';
 
   /* Target row, then your row, then the distance chips — the same vertical
@@ -200,7 +200,7 @@ export function cardBlob(canvas) {
  * browser won't allow image clipboard writes (Firefox, Safari in some modes).
  * @returns {Promise<'copied'|'downloaded'>}
  */
-export async function shareCard(canvas, filename = 'gussle.png') {
+export async function shareCard(canvas, filename = 'guessle.png') {
   const blob = await cardBlob(canvas);
 
   if (navigator.clipboard?.write && typeof ClipboardItem !== 'undefined') {

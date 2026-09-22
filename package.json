@@ -1,5 +1,5 @@
 {
-  "name": "gussle",
+  "name": "guessle",
   "version": "1.0.0",
   "description": "One nine-digit target a day. Roll each digit and land as close as you can.",
   "type": "module",

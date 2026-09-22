@@ -1,5 +1,5 @@
 /**
- * Gussle — scoring engine.
+ * Guessle — scoring engine.
  *
  * The game: one nine-digit target, shared by everyone, changing daily. You roll
  * the digits one at a time and try to land close to the target. After each roll

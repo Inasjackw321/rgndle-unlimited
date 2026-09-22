@@ -6,14 +6,27 @@
  * browser autoplay policies require.
  */
 
-const PREF_KEY = 'rngdle_sound';
+const PREF_KEY = 'guessle_sound';
+/** Written before the game was renamed. */
+const LEGACY_PREF_KEY = 'rngdle_sound';
 
 let ctx = null;
 let master = null;
 let enabled = true;
 
+/* Read at module load rather than in profile.js's migration, because this runs
+   during import — long before anything gets a chance to call that. */
 try {
-  enabled = localStorage.getItem(PREF_KEY) !== 'off';
+  let stored = localStorage.getItem(PREF_KEY);
+  if (stored === null) {
+    stored = localStorage.getItem(LEGACY_PREF_KEY);
+    // Move it across rather than reading the old key forever.
+    if (stored !== null) {
+      localStorage.setItem(PREF_KEY, stored);
+      localStorage.removeItem(LEGACY_PREF_KEY);
+    }
+  }
+  enabled = stored !== 'off';
 } catch {
   /* storage blocked — default to on */
 }

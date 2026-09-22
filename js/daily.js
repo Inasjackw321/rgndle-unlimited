@@ -52,7 +52,14 @@ function mulberry32(seed) {
   };
 }
 
-/** The nine digits everyone is aiming at on a given day. */
+/**
+ * The nine digits everyone is aiming at on a given day.
+ *
+ * The seed string is deliberately still the old spelling. It is not a name
+ * anyone sees — it is the input that decides every past and future target, so
+ * changing it would silently deal a different puzzle for today, mid-game, and
+ * renumber the whole sequence.
+ */
 export function dailyTarget(day = dateKey()) {
   const seed = xmur3(`gussle::target::${day}`);
   seed(); // xmur3's first output correlates with input length; discard it

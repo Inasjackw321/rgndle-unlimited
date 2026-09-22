@@ -405,7 +405,7 @@ function setupBackup() {
   saveBtn.addEventListener('click', () => {
     const save = backup.collect();
     const { days, awards } = backup.describe(save);
-    backup.download(save, `gussle-save-${daily.dateKey()}.json`);
+    backup.download(save, `guessle-save-${daily.dateKey()}.json`);
     ui.flashButton(saveBtn, 'Saved!');
     ui.toast({
       icon: '💾',
@@ -515,7 +515,7 @@ function setupRollButton() {
   const { down, up } = pressable(btn, roll, { ring: true });
 
   // The keyboard path gets the same animation the finger does.
-  window.addEventListener('rngdle:press', () => {
+  window.addEventListener('guessle:press', () => {
     if (btn.disabled) return;
     down();
     setTimeout(up, 110);
@@ -547,7 +547,7 @@ function setupKeyboard() {
     if (e.code === 'Space' || e.code === 'Enter') {
       if (phase === 'deciding') keep();
       else if (phase !== 'done') {
-        window.dispatchEvent(new Event('rngdle:press'));
+        window.dispatchEvent(new Event('guessle:press'));
         roll();
       }
       return;
@@ -569,7 +569,7 @@ function setupShare() {
       puzzle: daily.puzzleNumber(),
     });
     try {
-      const outcome = await share.shareCard(canvas, `gussle-${daily.dateKey()}.png`);
+      const outcome = await share.shareCard(canvas, `guessle-${daily.dateKey()}.png`);
       ui.flashButton(cardBtn, outcome === 'copied' ? 'Copied!' : 'Downloaded');
     } catch {
       ui.flashButton(cardBtn, 'Failed');
@@ -637,8 +637,8 @@ function init() {
   setupShare();
   setupRollButton();
 
-  // Fold any account-era storage back into one player before reading it.
-  profile.migrateFromAccounts();
+  // Bring older storage up to the current shape before reading any of it.
+  profile.migrate();
   reloadProfile();
 }
 

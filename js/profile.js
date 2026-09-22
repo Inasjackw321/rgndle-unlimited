@@ -5,8 +5,8 @@
  * in-progress game. There are no accounts, so there is nothing to namespace
  * against — the keys are bare.
  *
- * The merge rules live here too, because both the account migration below and
- * the save files in `backup.js` need them to agree. Every one resolves a
+ * The merge rules live here too, because both the migration below and the save
+ * files in `backup.js` need them to agree. Every one resolves a
  * conflict in the direction that cannot lose something: the better score, the
  * longer streak, the earlier unlock.
  */
@@ -15,11 +15,11 @@
 export const HISTORY_LIMIT = 50;
 
 export const STORES = {
-  history: 'gussle_history',
-  achievements: 'gussle_achievements',
-  dailyStreak: 'gussle_streak',
+  history: 'guessle_history',
+  achievements: 'guessle_achievements',
+  dailyStreak: 'guessle_streak',
   /** Today's in-progress or finished game, so a reload can't rewind it. */
-  dayState: 'gussle_day',
+  dayState: 'guessle_day',
 };
 
 export function read(key, fallback = null) {
@@ -83,10 +83,18 @@ export function mergeStreak(mine, theirs) {
 }
 
 /* ------------------------------------------------------------------ *
- * Migration off the account-era layout
+ * Migration
  * ------------------------------------------------------------------ */
 
-const MIGRATED = 'gussle_single_player';
+const MIGRATED = 'guessle_migrated';
+
+/** What each store was called back when the game was spelled "Gussle". */
+const RENAMED_FROM = {
+  [STORES.history]: 'gussle_history',
+  [STORES.achievements]: 'gussle_achievements',
+  [STORES.dailyStreak]: 'gussle_streak',
+  [STORES.dayState]: 'gussle_day',
+};
 
 /** Keys left behind by sign-in and the leaderboard, both now gone. */
 const OBSOLETE = [
@@ -98,14 +106,16 @@ const OBSOLETE = [
   'gussle_today',
   'gussle_guest_id',
   'gussle_legacy_migrated',
+  'gussle_single_player',
 ];
 
-function namespacedKeys(base) {
+/** Every stored key for a base, including the old per-identity suffixes. */
+function keysFor(base) {
   const keys = [];
   try {
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
-      if (key?.startsWith(`${base}::`)) keys.push(key);
+      if (key === base || key?.startsWith(`${base}::`)) keys.push(key);
     }
   } catch {
     /* storage unavailable */
@@ -114,19 +124,22 @@ function namespacedKeys(base) {
 }
 
 /**
- * Folds the old per-identity stores back into one.
+ * Brings storage from any older shape up to the current one, in one pass.
  *
- * Progress used to be filed under a player key — `gussle_history::google:1098…`
- * for an account, a per-browser UUID for a guest. With sign-in gone, none of
- * those keys is reachable any more, so the data is merged rather than picked
- * between: one person playing partly signed in and partly as a guest should get
- * all of it back, and merging can't lose a day that picking a winner would.
+ * Two things moved. Progress used to be filed under a player key —
+ * `gussle_history::google:1098765…` for a signed-in account, a per-browser UUID
+ * for a guest — and sign-in is gone, so none of those keys is reachable any
+ * more. Then the game was renamed, taking the `gussle_` prefix with it.
  *
- * The one exception is the in-progress game, which can't be merged — the
- * furthest-along state for today wins, so this can never hand back a re-roll
- * that was already spent.
+ * Everything found is **merged** rather than picked between, so someone who
+ * played partly signed in and partly as a guest gets all of it back, and
+ * merging can't lose a day that choosing a winner would.
+ *
+ * The one exception is the in-progress game, which can't be merged: the copy of
+ * today that got furthest wins, so this can never hand back a re-roll that was
+ * already spent.
  */
-export function migrateFromAccounts() {
+export function migrate() {
   if (read(MIGRATED)) return false;
 
   let moved = false;
@@ -137,8 +150,10 @@ export function migrateFromAccounts() {
   };
 
   for (const [base, merge] of Object.entries(mergers)) {
-    const keys = namespacedKeys(base);
+    const stale = keysFor(RENAMED_FROM[base]);
+    const keys = [...keysFor(base).filter((k) => k !== base), ...stale];
     if (!keys.length) continue;
+
     let merged = read(base);
     for (const key of keys) {
       merged = merge(merged, read(key));
@@ -150,10 +165,13 @@ export function migrateFromAccounts() {
     }
   }
 
-  // Day state: keep whichever copy of *today* got furthest.
-  const dayKeys = namespacedKeys(STORES.dayState);
+  // Day state: keep whichever copy of today got furthest.
+  const dayKeys = [
+    ...keysFor(STORES.dayState).filter((k) => k !== STORES.dayState),
+    ...keysFor(RENAMED_FROM[STORES.dayState]),
+  ];
   if (dayKeys.length) {
-    const progress = (s) => (Array.isArray(s?.rolled) ? s.rolled.length : -1);
+    const progress = (st) => (Array.isArray(st?.rolled) ? st.rolled.length : -1);
     let best = read(STORES.dayState);
     for (const key of dayKeys) {
       const candidate = read(key);

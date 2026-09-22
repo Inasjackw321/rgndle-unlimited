@@ -19,11 +19,13 @@ import {
   mergeStreak,
 } from './profile.js';
 
-export const FORMAT = 'gussle-save';
+export const FORMAT = 'guessle-save';
+/** Written before the game was renamed. Still restores. */
+const LEGACY_FORMAT = 'gussle-save';
 export const VERSION = 2;
 
 /**
- * What goes in the file. Deliberately not `gussle_day`: that is the
+ * What goes in the file. Deliberately not the day state: that is the
  * in-progress game, and letting a file overwrite it would hand out re-rolls
  * you had already spent — the exact rewind the day-state design exists to
  * prevent.
@@ -73,6 +75,14 @@ export function download(save, filename) {
 
 export class RestoreError extends Error {}
 
+/** Maps a key from any older save onto the store it belongs to now. */
+const RENAMED_FROM = {
+  gussle_history: STORES.history,
+  gussle_achievements: STORES.achievements,
+  gussle_streak: STORES.dailyStreak,
+};
+const normaliseKey = (key) => RENAMED_FROM[key] || key;
+
 export function parse(text) {
   let save;
   try {
@@ -80,8 +90,8 @@ export function parse(text) {
   } catch {
     throw new RestoreError("That file isn't valid JSON.");
   }
-  if (save?.format !== FORMAT) {
-    throw new RestoreError('That is not a Gussle save file.');
+  if (save?.format !== FORMAT && save?.format !== LEGACY_FORMAT) {
+    throw new RestoreError('That is not a Guessle save file.');
   }
   if (Number(save.version) > VERSION) {
     throw new RestoreError('That save was written by a newer version of the game.');
@@ -95,9 +105,11 @@ export function parse(text) {
 /**
  * Merges a parsed save into this browser.
  *
- * Version 1 files were written when the game still had accounts, so their keys
- * carry a player suffix (`gussle_history::google:1098…`). The suffix is dropped
- * and everything under the same store merges together, which is what those
+ * Older files need two things undone. Version 1 was written when the game still
+ * had accounts, so its keys carry a player suffix
+ * (`gussle_history::google:1098…`); and anything written before the rename uses
+ * the `gussle_` prefix. Both are normalised to the current store, and
+ * everything landing on the same store merges together — which is what those
  * identities collapsed into anyway.
  *
  * @returns {{restored: string[], failed: string[]}}
@@ -107,7 +119,7 @@ export function restore(save) {
   const failed = new Set();
 
   for (const [rawKey, incoming] of Object.entries(save.data)) {
-    const base = rawKey.split('::')[0];
+    const base = normaliseKey(rawKey.split('::')[0]);
     const merge = MERGERS[base];
     if (!merge) continue; // anything else in the file is ignored, not trusted
 
