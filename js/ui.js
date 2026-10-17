@@ -435,3 +435,127 @@ export function flashButton(button, text) {
     button.classList.remove('is-done');
   }, 1800);
 }
+
+/* ------------------------------------------------------------------ *
+ * Trophy
+ * ------------------------------------------------------------------ */
+
+/**
+ * The trophy line under the live readout.
+ *
+ * @param {object} g
+ * @param {number} g.banked   points locked in so far (or the final score)
+ * @param {number|null} g.pace  where the solver says the run ends up; null once done
+ * @param {number} g.goal     the trophy score
+ * @param {boolean} g.won     the finished day beat it
+ */
+export function setGoal({ banked, pace, goal, won }) {
+  const pct = (n) => `${Math.max(0, Math.min(1, n / goal)) * 100}%`;
+  el('goal-fill').style.width = pct(banked);
+  el('goal-pace').style.width = pace === null ? '0%' : pct(pace);
+
+  const onPace = pace !== null && pace > goal;
+  const box = el('goal');
+  box.classList.toggle('is-hot', onPace || won);
+  box.classList.toggle('is-won', Boolean(won));
+
+  const label = won ? 'WON' : onPace ? 'on pace!' : goal.toLocaleString();
+  el('goal-label').innerHTML = `<span aria-hidden="true">🏆</span> ${label}`;
+}
+
+export function setTrophyCount(n) {
+  const badge = el('trophy-count');
+  badge.textContent = String(n);
+  badge.hidden = n === 0;
+}
+
+/** The cabinet: every trophy won, oldest first so each keeps its number. */
+export function renderCabinet(trophies, { puzzleOf, onOpen, onShow, oneIn }) {
+  const list = el('cabinet');
+  const note = el('cabinet-note');
+  list.replaceChildren();
+
+  if (!trophies.length) {
+    note.textContent = '';
+    const li = document.createElement('li');
+    li.className = 'cabinet-empty';
+    const text = document.createElement('p');
+    text.textContent = `No trophies yet. Score more than 7,500 in a day to win a real one — about 1 day in ${oneIn} gets there.`;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'share-btn';
+    btn.textContent = 'See the trophy';
+    btn.addEventListener('click', onShow);
+    li.append(text, btn);
+    list.append(li);
+    return;
+  }
+
+  note.textContent = `${trophies.length} won. Open one to screenshot it for #guessle.`;
+  trophies.forEach((t, i) => {
+    const li = document.createElement('li');
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'cabinet-item';
+    btn.style.animationDelay = `${Math.min(i, 10) * 45}ms`;
+    btn.setAttribute('aria-label', `Trophy ${i + 1}: ${t.score.toLocaleString()} on ${t.day}`);
+
+    const icon = document.createElement('span');
+    icon.className = 'cabinet-icon';
+    icon.setAttribute('aria-hidden', 'true');
+    icon.textContent = '🏆';
+
+    const score = document.createElement('span');
+    score.className = 'cabinet-score';
+    score.textContent = t.score.toLocaleString();
+
+    const meta = document.createElement('span');
+    meta.className = 'cabinet-meta';
+    meta.textContent = `#${puzzleOf(t.day)} · ${t.day}`;
+
+    btn.append(icon, score, meta);
+    btn.addEventListener('click', () => onOpen(t, i + 1));
+    li.append(btn);
+    list.append(li);
+  });
+}
+
+/** Twinkling motes around the trophy. Built once per stage. */
+export function fillSparkles(stage, count = 18) {
+  const host = stage.querySelector('.sparkles');
+  if (!host || host.childElementCount) return;
+  for (let i = 0; i < count; i++) {
+    const s = document.createElement('span');
+    s.style.left = `${8 + Math.random() * 84}%`;
+    s.style.top = `${10 + Math.random() * 78}%`;
+    s.style.animationDelay = `${Math.random() * 3}s`;
+    s.style.animationDuration = `${2.2 + Math.random() * 2.4}s`;
+    s.style.setProperty('--size', `${2 + Math.random() * 4}px`);
+    host.append(s);
+  }
+}
+
+/**
+ * Confetti inside a dialog. The page's particle canvas sits *under* the top
+ * layer a modal dialog lives in, so a burst there would fire behind the
+ * backdrop where nobody can see it. These are plain elements inside the dialog.
+ */
+export function throwConfetti(stage, count = 70) {
+  const host = stage.querySelector('.confetti');
+  if (!host) return;
+  host.replaceChildren();
+  const colours = ['#ffc857', '#ffe7a6', '#ff8f5d', '#6ee7ff', '#c084fc', '#ffffff'];
+  for (let i = 0; i < count; i++) {
+    const c = document.createElement('span');
+    c.style.left = `${Math.random() * 100}%`;
+    c.style.background = colours[i % colours.length];
+    c.style.animationDelay = `${Math.random() * 0.5}s`;
+    c.style.animationDuration = `${1.8 + Math.random() * 1.6}s`;
+    c.style.setProperty('--drift', `${(Math.random() - 0.5) * 160}px`);
+    c.style.setProperty('--spin', `${(Math.random() - 0.5) * 1440}deg`);
+    c.style.width = `${5 + Math.random() * 6}px`;
+    c.style.height = `${8 + Math.random() * 8}px`;
+    host.append(c);
+  }
+  setTimeout(() => host.replaceChildren(), 4200);
+}

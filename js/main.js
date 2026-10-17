@@ -32,11 +32,17 @@ import * as achievements from './achievements.js';
 import * as share from './share.js';
 import * as profile from './profile.js';
 import * as backup from './backup.js';
+import * as trophies from './trophies.js';
+import { mountTrophy } from './trophy3d.js';
 import * as ui from './ui.js';
 
 const state = {
   busy: false,
   history: [],
+  /** The live 3D trophy, if a showcase dialog is open. */
+  viewer: null,
+  /** Achievement toasts held back while the trophy ceremony is on screen. */
+  pendingToasts: [],
   countdownTimer: null,
   lastResult: null,
 };
@@ -154,6 +160,7 @@ function paintLive() {
       });
 
   ui.setLive({ score, pace, bullseyes: snap.bullseyes, best: personalBest(), done });
+  ui.setGoal({ banked: score, pace, goal: trophies.TROPHY_SCORE, won: done && trophies.earns(score) });
 }
 
 /** Redraws lanes, pips and controls from the persisted game state. */
@@ -362,15 +369,36 @@ async function finish() {
     percentile,
     totals: { days: state.history.length, streak },
   });
-  unlocked.forEach((award, i) => {
+  if (unlocked.length) {
+    ui.renderAwards(achievements.ACHIEVEMENTS, achievements.progress().unlocked);
+  }
+
+  const won = trophies.earns(result.total);
+  if (won) {
+    const { trophy, number } = trophies.award({
+      day: entry.day,
+      score: result.total,
+      rank: rank.label,
+      digits: result.display,
+      rerollsLeft: result.rerollsLeft,
+    });
+    refreshTrophies();
+    // Achievements wait their turn: toasts render under the top layer a modal
+    // lives in, so any that fired now would play out unseen behind it.
+    state.pendingToasts.push(...unlocked);
+    setTimeout(() => openTrophy(trophy, number, { ceremony: true }), 1100);
+  } else {
+    showToasts(unlocked);
+  }
+}
+
+function showToasts(awards) {
+  awards.forEach((award, i) => {
     setTimeout(() => {
       ui.toast({ icon: award.icon, name: award.name, desc: award.desc });
       audio.fanfare(3);
     }, 500 + i * 700);
   });
-  if (unlocked.length) {
-    ui.renderAwards(achievements.ACHIEVEMENTS, achievements.progress().unlocked);
-  }
 }
 
 /* ------------------------------------------------------------------ *
@@ -389,6 +417,150 @@ function setupHelp() {
     `Your rank is your position among ${SAMPLE_SIZE.toLocaleString()} simulated days played by a ` +
     'solver that always makes the best re-roll decision. Beating the percentile means you got luckier ' +
     'than perfect play, not that you out-thought it.';
+}
+
+/* ------------------------------------------------------------------ *
+ * Trophy
+ * ------------------------------------------------------------------ */
+
+const CHALLENGE_SEEN = 'guessle_challenge_seen';
+
+function refreshTrophies() {
+  const all = trophies.list();
+  ui.setTrophyCount(all.length);
+  ui.renderCabinet(all, {
+    puzzleOf: (day) => daily.puzzleNumber(day),
+    onOpen: (t, n) => openTrophy(t, n),
+    onShow: () => openChallenge(),
+    oneIn: trophies.oneIn(),
+  });
+}
+
+/**
+ * Opens a showcase dialog and puts a live trophy in it.
+ *
+ * Each open gets a fresh canvas. Closing hands the WebGL context back with
+ * loseContext(), and a canvas whose context was lost that way returns the same
+ * dead context from every later getContext() call — reusing it would leave the
+ * second trophy blank.
+ */
+function openShowcase(dialog, plate) {
+  closeViewer();
+  dialog.showModal();
+  const stage = dialog.querySelector('.showcase-stage');
+  const old = stage.querySelector('.showcase-canvas');
+  const canvas = old.cloneNode(false);
+  old.replaceWith(canvas);
+  ui.fillSparkles(stage);
+
+  state.viewer = mountTrophy(canvas, plate);
+  stage.classList.toggle('is-flat', !state.viewer);
+  return stage;
+}
+
+function closeViewer() {
+  state.viewer?.destroy();
+  state.viewer = null;
+}
+
+function openChallenge() {
+  audio.press();
+  openShowcase(ui.el('challenge-dialog'), { top: 'GUESSLE', bottom: 'OVER 7,500' });
+}
+
+/**
+ * The winner screen. The trophy is real and claimed by screenshot, so this is
+ * the claim: it has to name the puzzle, the day, and what was actually rolled —
+ * enough to re-score it from the image alone — and it can be reopened from the
+ * cabinet in case it was closed before anyone took the screenshot.
+ */
+function openTrophy(trophy, number, { ceremony = false } = {}) {
+  const dialog = ui.el('trophy-dialog');
+  const puzzle = daily.puzzleNumber(trophy.day);
+  ui.el('trophy-eyebrow').textContent = ceremony ? 'You won a real trophy' : `Trophy ${number} · real-life prize`;
+  ui.el('trophy-title').textContent = trophy.score.toLocaleString();
+
+  const facts = [`Guessle #${puzzle}`, trophy.day];
+  if (trophy.digits) facts.push(`rolled ${trophy.digits}`);
+  if (Number.isFinite(trophy.rerollsLeft)) {
+    facts.push(`${trophy.rerollsLeft} re-roll${trophy.rerollsLeft === 1 ? '' : 's'} left`);
+  }
+  ui.el('trophy-text').textContent = facts.join(' · ');
+  dialog.classList.toggle('is-ceremony', ceremony);
+
+  const stage = openShowcase(dialog, {
+    top: `GUESSLE #${puzzle}`,
+    bottom: trophy.score.toLocaleString(),
+    reveal: ceremony,
+  });
+
+  if (ceremony) {
+    audio.thud();
+    audio.fanfare(14);
+    buzz([20, 60, 30, 60, 90]);
+    ui.throwConfetti(stage);
+  }
+}
+
+function setupTrophies() {
+  const challenge = ui.el('challenge-dialog');
+  const trophy = ui.el('trophy-dialog');
+
+  for (const dialog of [challenge, trophy]) {
+    dialog.querySelector('.showcase-close').addEventListener('click', () => dialog.close());
+    dialog.addEventListener('click', (e) => {
+      if (e.target === dialog) dialog.close();
+    });
+    dialog.addEventListener('close', closeViewer);
+  }
+
+  challenge.addEventListener('close', () => {
+    try {
+      localStorage.setItem(CHALLENGE_SEEN, daily.dateKey());
+    } catch {
+      /* it just shows again next time */
+    }
+  });
+  ui.el('challenge-go').addEventListener('click', () => challenge.close());
+
+  trophy.addEventListener('close', () => {
+    showToasts(state.pendingToasts.splice(0));
+  });
+  ui.el('trophy-ok').addEventListener('click', () => trophy.close());
+
+  ui.el('goal').addEventListener('click', openChallenge);
+  ui.el('help-trophy').addEventListener('click', () => {
+    ui.el('help-dialog').close();
+    openChallenge();
+  });
+
+  const n = trophies.oneIn();
+  ui.el('challenge-odds').textContent = `about 1 day in ${n}`;
+  ui.el('help-odds').textContent = `Even perfect re-roll judgement gets there about 1 day in ${n}.`;
+}
+
+/**
+ * The challenge introduces itself once, at the start of a fresh day — not
+ * mid-run, not after the day's done, and not again once dismissed.
+ */
+function maybeShowChallenge() {
+  const snap = game.snapshot();
+  const fresh = snap.phase === 'ready' && snap.rolled.length === 0 && snap.rerollsUsed === 0;
+  let seen = null;
+  try {
+    seen = localStorage.getItem(CHALLENGE_SEEN);
+  } catch {
+    /* storage blocked — show it */
+  }
+  if (!fresh || seen === daily.dateKey()) return;
+
+  const count = trophies.list().length;
+  ui.el('challenge-count').textContent = count
+    ? `${count} in your cabinet`
+    : 'none in your cabinet yet';
+  setTimeout(() => {
+    if (!document.querySelector('dialog[open]')) openChallenge();
+  }, 650);
 }
 
 /**
@@ -432,6 +604,8 @@ function setupBackup() {
       if (failed.length) throw new backup.RestoreError('This browser is blocking storage.');
 
       reloadProfile();
+      trophies.backfill(state.history);
+      refreshTrophies();
       ui.flashButton(restoreBtn, 'Restored!');
       const { days } = backup.describe(save);
       ui.toast({
@@ -530,7 +704,9 @@ function setupKeyboard() {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     const tag = document.activeElement?.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA') return;
-    if (ui.el('help-dialog').open || ui.el('drawer').open) return;
+    // Any open dialog owns the keyboard — including Space, so it can't roll a
+    // digit from behind a modal.
+    if (document.querySelector('dialog[open]')) return;
 
     const ours = e.code === 'Space' || e.code === 'Enter' || e.code === 'KeyR' || e.code === 'Backspace';
     if (!ours) return;
@@ -640,6 +816,11 @@ function init() {
   // Bring older storage up to the current shape before reading any of it.
   profile.migrate();
   reloadProfile();
+
+  setupTrophies();
+  trophies.backfill(state.history);
+  refreshTrophies();
+  maybeShowChallenge();
 }
 
 init();

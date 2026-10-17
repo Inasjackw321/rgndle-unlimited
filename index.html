@@ -35,6 +35,7 @@
              material; the game is the page. -->
         <button id="drawer-btn" class="icon-btn is-wide" type="button" aria-haspopup="dialog" title="History, stats and awards">
           <span aria-hidden="true">🏆</span><span class="icon-btn-label">Record</span>
+          <span class="count-badge" id="trophy-count" hidden></span>
         </button>
       </div>
     </header>
@@ -61,6 +62,15 @@
             <span class="live-label">BULLSEYES</span>
             <span class="live-value" id="live-bulls">0</span>
           </div>
+          <!-- The trophy line. The solid fill is what's banked; the ghost fill
+               behind it is where the solver says this run is heading. -->
+          <button class="goal" id="goal" type="button" aria-label="Score more than 7,500 to win a real trophy. Show the trophy.">
+            <span class="goal-track" aria-hidden="true">
+              <span class="goal-pace" id="goal-pace"></span>
+              <span class="goal-fill" id="goal-fill"></span>
+            </span>
+            <span class="goal-label" id="goal-label"><span aria-hidden="true">🏆</span> 7,500</span>
+          </button>
         </div>
 
         <div class="machine">
@@ -132,6 +142,7 @@
           <button class="tab is-active" role="tab" data-panel="history" aria-selected="true">History</button>
           <button class="tab" role="tab" data-panel="stats" aria-selected="false">Stats</button>
           <button class="tab" role="tab" data-panel="awards" aria-selected="false">Awards</button>
+          <button class="tab" role="tab" data-panel="trophies" aria-selected="false">Trophies</button>
         </div>
 
         <div class="panel is-active" data-panel="history">
@@ -161,10 +172,69 @@
           </div>
           <ul class="awards" id="awards"></ul>
         </div>
+
+        <div class="panel" data-panel="trophies">
+          <div class="panel-note" id="cabinet-note"></div>
+          <ol class="cabinet" id="cabinet"></ol>
+        </div>
       </aside>
     </dialog>
 
     <div class="toasts" id="toasts" aria-live="polite" aria-atomic="false"></div>
+
+    <!-- What you can win. Shown once at the start of a fresh day. -->
+    <dialog id="challenge-dialog" class="showcase" aria-labelledby="challenge-title">
+      <button class="showcase-close" type="button" aria-label="Close">✕</button>
+      <div class="showcase-stage">
+        <div class="showcase-rays" aria-hidden="true"></div>
+        <div class="showcase-glow" aria-hidden="true"></div>
+        <div class="sparkles" aria-hidden="true"></div>
+        <canvas class="showcase-canvas" tabindex="0" aria-label="The trophy. Drag or use the arrow keys to turn it."></canvas>
+        <span class="showcase-hint" aria-hidden="true">drag to spin</span>
+      </div>
+      <div class="showcase-body">
+        <p class="showcase-eyebrow">Real-life prize</p>
+        <h2 class="showcase-title" id="challenge-title">Score more than <span class="gold-text">7,500</span></h2>
+        <p class="showcase-text">
+          Beat 7,500 points in one day and win this trophy <strong>in real life</strong>. Screenshot your
+          winner screen and send it in <strong>#guessle</strong> in the server chat to claim it.
+        </p>
+        <div class="showcase-chips">
+          <span class="chip" id="challenge-odds"></span>
+          <span class="chip" id="challenge-count"></span>
+        </div>
+        <button class="showcase-cta" id="challenge-go" type="button" autofocus>Let's roll</button>
+      </div>
+    </dialog>
+
+    <!-- The trophy itself: the winning ceremony, or a look at one you own. -->
+    <dialog id="trophy-dialog" class="showcase is-trophy" aria-labelledby="trophy-title">
+      <button class="showcase-close" type="button" aria-label="Close">✕</button>
+      <div class="showcase-stage">
+        <div class="showcase-rays" aria-hidden="true"></div>
+        <div class="showcase-glow" aria-hidden="true"></div>
+        <div class="sparkles" aria-hidden="true"></div>
+        <div class="confetti" aria-hidden="true"></div>
+        <canvas class="showcase-canvas" tabindex="0" aria-label="Your trophy. Drag or use the arrow keys to turn it."></canvas>
+        <span class="showcase-hint" aria-hidden="true">drag to spin</span>
+      </div>
+      <div class="showcase-body">
+        <p class="showcase-eyebrow" id="trophy-eyebrow">You won a real trophy</p>
+        <h2 class="showcase-title gold-text" id="trophy-title">8,240</h2>
+        <!-- Puzzle, date, digits and re-rolls: everything needed to re-score
+             the claim from the screenshot alone. -->
+        <p class="showcase-text claim-facts" id="trophy-text"></p>
+        <div class="claim">
+          <span class="claim-icon" aria-hidden="true">📸</span>
+          <p>
+            <strong>Screenshot this screen</strong> and send it in <strong>#guessle</strong> in the server
+            chat to claim your trophy.
+            <span class="claim-later">You can reopen it any time from Record → Trophies.</span>
+          </p>
+        </div>
+        <button class="showcase-cta" id="trophy-ok" type="button" autofocus>Got it</button>
+      </div>
+    </dialog>
 
     <dialog id="help-dialog" class="dialog">
       <article>
@@ -191,6 +261,15 @@
           There are only three, and an unspent one is worth points at the end &mdash; so a mediocre digit
           early is usually worth keeping, while the same digit on the last lane is worth burning a re-roll on.
           Judging that is the whole game.
+        </p>
+
+        <h3>Trophies</h3>
+        <p>
+          Score more than 7,500 in a day and you win a real trophy. Screenshot the winner screen and send
+          it in <strong>#guessle</strong> in the server chat to claim it. <span id="help-odds"></span>
+        </p>
+        <p class="setup-actions">
+          <button type="button" class="share-btn" id="help-trophy">See the trophy</button>
         </p>
 
         <h3>Ranks are real</h3>

@@ -20,6 +20,8 @@ export const STORES = {
   dailyStreak: 'guessle_streak',
   /** Today's in-progress or finished game, so a reload can't rewind it. */
   dayState: 'guessle_day',
+  /** Every day that beat the trophy score. Not capped, unlike history. */
+  trophies: 'guessle_trophies',
 };
 
 export function read(key, fallback = null) {
@@ -65,6 +67,21 @@ export function mergeHistory(mine, theirs) {
   return [...best.values()]
     .sort((a, b) => String(b.day).localeCompare(String(a.day)))
     .slice(0, HISTORY_LIMIT);
+}
+
+/**
+ * One trophy per day, keeping the better score, oldest first so a trophy's
+ * number in the cabinet never changes. Deliberately uncapped: history keeps 50
+ * days, but a trophy shouldn't quietly disappear after seven weeks.
+ */
+export function mergeTrophies(mine, theirs) {
+  const best = new Map();
+  for (const row of [...(mine || []), ...(theirs || [])]) {
+    if (!row?.day) continue;
+    const standing = best.get(row.day);
+    if (!standing || scoreOf(standing) < scoreOf(row)) best.set(row.day, row);
+  }
+  return [...best.values()].sort((a, b) => String(a.day).localeCompare(String(b.day)));
 }
 
 /** Union of unlocks, keeping the earlier timestamp — you earned it when you earned it. */

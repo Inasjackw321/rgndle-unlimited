@@ -3,7 +3,7 @@
  *
  * Everything is on-device, and localStorage is one "clear site data" away from
  * gone — on a new phone it was never there at all. This writes your results,
- * streak and achievements to a file you keep.
+ * streak, achievements and trophies to a file you keep.
  *
  * Restoring **merges**, it doesn't replace. Two devices should add up to one
  * record, and a file from last month shouldn't undo this morning. The merge
@@ -17,6 +17,7 @@ import {
   mergeHistory,
   mergeAchievements,
   mergeStreak,
+  mergeTrophies,
 } from './profile.js';
 
 export const FORMAT = 'guessle-save';
@@ -34,6 +35,7 @@ const MERGERS = {
   [STORES.history]: mergeHistory,
   [STORES.achievements]: mergeAchievements,
   [STORES.dailyStreak]: mergeStreak,
+  [STORES.trophies]: mergeTrophies,
 };
 
 /* ------------------------------------------------------------------ *
@@ -53,9 +55,11 @@ export function collect() {
 export function describe(save) {
   const history = save?.data?.[STORES.history];
   const awards = save?.data?.[STORES.achievements];
+  const trophies = save?.data?.[STORES.trophies];
   return {
     days: Array.isArray(history) ? history.length : 0,
     awards: awards ? Object.keys(awards).length : 0,
+    trophies: Array.isArray(trophies) ? trophies.length : 0,
   };
 }
 

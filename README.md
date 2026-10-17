@@ -22,6 +22,13 @@ The two buttons state the trade in the only unit that matters — **Keep +150** 
 averages +223** (the expected value of an unseen digit). That isn't advice: an unspent re-roll is
 worth 250 at the end and there are only three, so the arithmetic still doesn't decide for you.
 
+### Win a real trophy
+
+**Score more than 7,500 in a day and you win a trophy — a real one.** Screenshot the winner screen and
+send it in **#guessle** in the server chat to claim it. A fresh day opens with a popup showing the
+trophy you're playing for; the goal line under the live score shows how close the run is, and runs
+gold when the solver's projection passes 7,500.
+
 ### Digits wrap
 
 Distance is measured the short way round, so **9 and 0 are one apart** and the worst you can ever be
@@ -118,6 +125,56 @@ its height, so the button you press is next to the thing it operates. An earlier
 controls to the bottom of the viewport instead; that put the button at the far end of the screen from
 the reels, which is not where your eye already is.
 
+## The trophy
+
+7,500 is about **a 1-in-38 day** even for a solver that never misjudges a re-roll, so a trophy means
+something. The odds the popup quotes are read from the same percentile table the ranks use, so the copy
+can't drift from the maths. Exactly 7,500 doesn't count — the rule is *more than*.
+
+### The winner screen is the claim
+
+Because the prize is physical and claimed by screenshot, the winner screen is built to be screenshotted:
+the trophy, the score, and a line with the **puzzle number, date, the nine digits rolled and the
+re-rolls left** — everything needed to re-score the claim from the image alone, all of it fitting one
+phone screen (checked at 375×667). It can be reopened from **Record → Trophies** in case it was closed
+before anyone took the shot. Achievement toasts that would have fired during the ceremony wait until
+it closes, since a toast renders under the modal's top layer and would play out unseen.
+
+**For whoever hands out the trophies:** this is a client-side game, so a screenshot can't *prove* a win.
+The digits on the winner screen let you catch the easy fake — a number edited in an image editor won't
+re-score to what it claims — but anyone who opens the browser's dev tools can write themselves a winning
+day. Stopping that needs the server to deal the rolls, which this game deliberately doesn't have. Worth
+knowing before the prize gets expensive.
+
+### The 3D trophy
+
+Hand-built in plain WebGL — no library. The game has no dependencies and works offline after the first
+load, and a 3D library would end both for one prop. A trophy is close to ideal hand-made geometry
+anyway: cup, stem and foot are one surface of revolution, the handles are tubes swept along a Bézier
+curve, and the plinth is boxes. The engraved plate is a 2D canvas used as a texture, so every trophy
+carries its own puzzle number and score.
+
+The gold isn't a texture either. Each pixel reflects a procedural studio — a bright horizon, a key
+softbox, and cyan and violet rim lights from the site's palette — tinted by gold's real reflectance,
+which is why highlights slide across it as it turns. Drag (or arrow keys) to spin it, with inertia;
+it drifts back to a slow showroom turn when left alone.
+
+Two timing bugs worth recording, because both rendered the trophy blown-out white:
+
+- The `requestAnimationFrame` timestamp is the *start* of the frame, so it can be earlier than a
+  `performance.now()` taken during it — on a busy page load, by a lot. A negative frame delta ran every
+  decay backwards. Everything now runs on the rAF clock, with the delta clamped at both ends.
+- The reveal flash faded by stepping that delta, which is capped per frame to stop a jump after a
+  backgrounded tab. On a slow device the cap turned a 0.65s fade into several seconds. It now fades on
+  wall-clock age.
+
+### Storage
+
+Trophies have their own store rather than being derived from history: history keeps 50 days, and a
+trophy shouldn't quietly disappear after seven weeks. Winning days already in your history earn their
+trophies retroactively. Trophies travel in save files and merge like everything else — one per day,
+best score kept.
+
 ## Pressing things
 
 Every control shares one press language — sink, darken, collapse the lift — fired on `pointerdown`,
@@ -181,8 +238,8 @@ first load.
 ### Saving it
 
 "Clear site data" is one click away from erasing all of it, and on a new phone it was never there.
-**Save a copy** under **Record → Stats** downloads your results, streak and achievements as one JSON
-file; **Restore…** reads one back.
+**Save a copy** under **Record → Stats** downloads your results, streak, achievements and trophies as
+one JSON file; **Restore…** reads one back.
 
 Restoring **merges**, it doesn't replace, so two devices add up to one record and a file from last
 month can't undo this morning. Every conflict resolves in the direction that can't lose anything: the
@@ -227,6 +284,8 @@ js/fx.js                    starfield, particle bursts, count-up, screen shake
 js/audio.js                 synthesised sound (no audio files)
 js/profile.js               on-device storage and the merge rules
 js/backup.js                save to a file, restore by merging
+js/trophies.js              the trophy rule, odds, award and backfill
+js/trophy3d.js              the WebGL trophy: geometry, shaders, drag-to-spin
 js/ui.js                    rendering
 js/main.js                  game loop and wiring
 tools/gen-percentiles.mjs   Monte Carlo of optimal play -> js/percentiles.js
