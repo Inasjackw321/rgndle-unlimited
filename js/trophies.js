@@ -17,6 +17,12 @@ export const EVENT = {
   ended: '2026-11-02',
   /** For copy: "17 Oct – 2 Nov". */
   span: '17 Oct – 2 Nov',
+  /**
+   * The two people who won, by the ID on their trophy. IDs only: the game runs
+   * in each player's browser and never knew who anyone was, so there are no
+   * names or scores to show — and none should be invented.
+   */
+  winners: [{ id: 1 }, { id: 2 }],
 };
 
 export function list() {

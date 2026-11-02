@@ -41,6 +41,8 @@ const state = {
   history: [],
   /** The live 3D trophy, if a showcase dialog is open. */
   viewer: null,
+  /** The winners card's trophies, while it's open. */
+  winnerViewers: [],
   countdownTimer: null,
   lastResult: null,
 };
@@ -404,18 +406,13 @@ function setupHelp() {
  * Trophy
  * ------------------------------------------------------------------ */
 
-/** Set once the "event is over" notice has been seen — it's a one-time thing. */
-const EVENT_OVER_SEEN = 'guessle_event_over_seen';
-/** Set by the event's daily popup, so it marks someone who was around for it. */
-const CHALLENGE_SEEN = 'guessle_challenge_seen';
-
 function refreshTrophies() {
   const all = trophies.list();
   ui.setTrophyCount(all.length);
   ui.renderCabinet(all, {
     puzzleOf: (day) => daily.puzzleNumber(day),
     onOpen: (t, n) => openTrophy(t, n),
-    onShow: () => openEventOver(),
+    onShow: () => showWinners(),
     span: trophies.EVENT.span,
   });
 }
@@ -447,13 +444,43 @@ function closeViewer() {
   state.viewer = null;
 }
 
-function openEventOver() {
-  audio.press();
-  const count = trophies.list().length;
-  ui.el('event-count').textContent = count
-    ? `${count} ${count === 1 ? 'trophy' : 'trophies'} in your cabinet`
-    : 'none in your cabinet';
-  openShowcase(ui.el('event-dialog'), { top: 'GUESSLE', bottom: 'THANK YOU' });
+/**
+ * Opens the winners card. A modal dialog makes everything outside it inert,
+ * a popover included, so anything modal (the drawer, help) has to close first
+ * or the card would open unclickable.
+ */
+function showWinners() {
+  document.querySelectorAll('dialog[open]').forEach((d) => d.close());
+  ui.el('winners').showPopover();
+}
+
+/** Two trophies, one per winner, each turning on its own. */
+function mountWinners() {
+  const slots = ui.renderWinners({
+    winners: trophies.EVENT.winners,
+    span: trophies.EVENT.span,
+    mine: trophies.list().length,
+    onMine: () => {
+      ui.el('winners').hidePopover();
+      ui.el('drawer').showModal();
+      document.querySelector('.tab[data-panel="trophies"]').click();
+    },
+  });
+  state.winnerViewers = slots.map(({ id, stage }, i) => {
+    const viewer = mountTrophy(stage.querySelector('canvas'), {
+      top: 'GUESSLE',
+      bottom: `ID: ${id}`,
+      // Start them facing different ways so they don't turn in lockstep.
+      yaw: -0.6 + i * 1.9,
+    });
+    stage.classList.toggle('is-flat', !viewer);
+    return viewer;
+  });
+}
+
+function unmountWinners() {
+  state.winnerViewers.forEach((v) => v?.destroy());
+  state.winnerViewers = [];
 }
 
 /**
@@ -463,7 +490,9 @@ function openEventOver() {
  */
 function openTrophy(trophy, number) {
   const puzzle = daily.puzzleNumber(trophy.day);
-  ui.el('trophy-eyebrow').textContent = `Trophy ${number} · trophy event`;
+  // "Your trophy", never "Trophy 1": the event's winners are known as ID: 1 and
+  // ID: 2, and this game can't know which of those a player's own trophy is.
+  ui.el('trophy-eyebrow').textContent = number > 1 ? `Your trophy ${number} · trophy event` : 'Your trophy · trophy event';
   ui.el('trophy-title').textContent = trophy.score.toLocaleString();
 
   const facts = [`Guessle #${puzzle}`, trophy.day];
@@ -480,65 +509,32 @@ function openTrophy(trophy, number) {
 }
 
 function setupTrophies() {
-  const notice = ui.el('event-dialog');
   const trophy = ui.el('trophy-dialog');
-
-  for (const dialog of [notice, trophy]) {
-    dialog.querySelector('.showcase-close').addEventListener('click', () => dialog.close());
-    dialog.addEventListener('click', (e) => {
-      if (e.target === dialog) dialog.close();
-    });
-    dialog.addEventListener('close', closeViewer);
-  }
-
-  notice.addEventListener('close', () => {
-    try {
-      localStorage.setItem(EVENT_OVER_SEEN, '1');
-    } catch {
-      /* it just shows again next time */
-    }
+  trophy.querySelector('.showcase-close').addEventListener('click', () => trophy.close());
+  trophy.addEventListener('click', (e) => {
+    if (e.target === trophy) trophy.close();
   });
-  ui.el('event-ok').addEventListener('click', () => notice.close());
+  trophy.addEventListener('close', closeViewer);
   ui.el('trophy-ok').addEventListener('click', () => trophy.close());
 
-  ui.el('help-trophies').addEventListener('click', () => {
-    ui.el('help-dialog').close();
-    ui.el('drawer').showModal();
-    document.querySelector('.tab[data-panel="trophies"]').click();
+  // The trophies only render while the card is open: WebGL in a corner card
+  // nobody is looking at would just be burning battery.
+  const card = ui.el('winners');
+  card.addEventListener('toggle', (e) => {
+    if (e.newState === 'open') {
+      audio.press();
+      mountWinners();
+    } else {
+      unmountWinners();
+    }
   });
-}
 
-/**
- * Tells people who were around for the trophy event that it's over — once.
- *
- * Only them: telling a brand-new player that something they never heard of has
- * ended would just be confusing. "Around for it" means they saw the event's
- * popup, won a trophy, or played a day while it was running. Not mid-run,
- * either; a half-played day waits for the next load.
- */
-function maybeShowEventOver() {
-  const snap = game.snapshot();
-  const midRun =
-    snap.phase !== 'done' && (snap.rolled.length > 0 || snap.phase === 'deciding' || snap.rerollsUsed > 0);
-
-  let seen = null;
-  let sawChallenge = null;
-  try {
-    seen = localStorage.getItem(EVENT_OVER_SEEN);
-    sawChallenge = localStorage.getItem(CHALLENGE_SEEN);
-  } catch {
-    return; // storage blocked: no way to show it only once, so don't show it
-  }
-
-  const wasThere =
-    Boolean(sawChallenge) ||
-    trophies.list().length > 0 ||
-    state.history.some((h) => h.day >= trophies.EVENT.started);
-  if (seen || midRun || !wasThere) return;
-
-  setTimeout(() => {
-    if (!document.querySelector('dialog[open]')) openEventOver();
-  }, 650);
+  const { winners, span } = trophies.EVENT;
+  ui.el('winners-fab-count').textContent = String(winners.length);
+  ui.el('help-event').textContent =
+    `The real-life trophy event ran ${span} and is over — scores over 7,500 no longer win a trophy. ` +
+    `${winners.length} people won, and their trophies are ${winners.map((w) => `ID: ${w.id}`).join(' and ')}.`;
+  ui.el('help-winners').addEventListener('click', showWinners);
 }
 
 /**
@@ -681,9 +677,10 @@ function setupKeyboard() {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     const tag = document.activeElement?.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA') return;
-    // Any open dialog owns the keyboard — including Space, so it can't roll a
-    // digit from behind a modal.
-    if (document.querySelector('dialog[open]')) return;
+    // An open dialog or the winners card owns the keyboard — including Space,
+    // so it can't roll a digit from behind one, or swallow a press meant for a
+    // button inside it.
+    if (document.querySelector('dialog[open], :popover-open')) return;
 
     const ours = e.code === 'Space' || e.code === 'Enter' || e.code === 'KeyR' || e.code === 'Backspace';
     if (!ours) return;
@@ -796,7 +793,6 @@ function init() {
 
   setupTrophies();
   refreshTrophies();
-  maybeShowEventOver();
 }
 
 init();

@@ -26,7 +26,9 @@ worth 250 at the end and there are only three, so the arithmetic still doesn't d
 
 From 17 October to 2 November 2026, scoring more than 7,500 in a day won a real trophy, claimed by
 posting a screenshot of the winner screen in **#guessle**. That event has ended: scores over 7,500 no
-longer win anything. Trophies won while it ran stay in each player's cabinet.
+longer win anything. **Two people won**, and their trophies are identified as **ID: 1** and **ID: 2**.
+The 🏆 button in the bottom-right corner shows both, as two separate 3D trophies you can turn over.
+Trophies won while it ran also stay in each player's own cabinet.
 
 ### Digits wrap
 
@@ -137,12 +139,15 @@ are gone outright:
 - **Nothing is awarded.** No winner ceremony, no claim screen, and no retroactive trophies for old
   winning days — that backfill would otherwise mint new ones today.
 - **The goal line under the live score is gone.** It existed to chase the prize.
-- **The daily challenge popup is now a one-time "the trophy event is over" notice**, shown only to
-  people who were around for it: they saw the old popup, won a trophy, or played a day while it ran.
-  Telling a brand-new player that something they never heard of has ended would just confuse them.
-  It never interrupts a run in progress.
+- **The daily challenge popup is gone.** In its place is a small 🏆 button in the bottom-right corner,
+  badged **2**, which opens a card saying two people won and showing their trophies side by side —
+  **ID: 1** and **ID: 2** — each a separate 3D trophy you can drag to turn. It's a button rather than a
+  popup, so nothing interrupts a run, and it's light-dismissed (Escape or click outside). The winners
+  are listed in `js/trophies.js` by ID only: the game runs in each player's browser and never knew
+  who anyone was, so there are no names or scores to show. Help → "See the winners" opens the same card.
 
-What stays is the record. Trophies won during the event remain in **Record → Trophies**, travel in save
+What stays is the record. Trophies won during the event remain in **Record → Trophies** (labelled "Your trophy", so they're not
+confused with the two winners' IDs), travel in save
 files, and can still be turned over in 3D. Reopening one shows the same line of facts the winner screen
 did — puzzle, date, digits, re-rolls — so it still matches any screenshot posted for it, but it no longer
 asks anyone to claim it.

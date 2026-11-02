@@ -441,9 +441,10 @@ const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)'
  * @param {string}  options.top      first line on the plate
  * @param {string}  options.bottom   second line on the plate
  * @param {boolean} options.reveal   arrive with a spin and a flash
+ * @param {number}  options.yaw      starting angle, so two side by side don't turn in lockstep
  * @returns {{destroy: Function, spin: Function} | null}  null when WebGL is unavailable
  */
-export function mountTrophy(canvas, { top = 'GUESSLE', bottom = '7,500+', reveal = false } = {}) {
+export function mountTrophy(canvas, { top = 'GUESSLE', bottom = '7,500+', reveal = false, yaw = -0.5 } = {}) {
   const gl = canvas.getContext('webgl', { antialias: true, alpha: true, premultipliedAlpha: true });
   if (!gl) return null;
 
@@ -500,7 +501,7 @@ export function mountTrophy(canvas, { top = 'GUESSLE', bottom = '7,500+', reveal
   const REST_PITCH = 0.2;
 
   const view = {
-    yaw: -0.5,
+    yaw,
     pitch: REST_PITCH,
     yawVel: reveal && !still ? 16 : IDLE_SPIN,
     pitchVel: 0,

@@ -475,7 +475,7 @@ export function renderCabinet(trophies, { puzzleOf, onOpen, onShow, span }) {
     btn.type = 'button';
     btn.className = 'cabinet-item';
     btn.style.animationDelay = `${Math.min(i, 10) * 45}ms`;
-    btn.setAttribute('aria-label', `Trophy ${i + 1}: ${t.score.toLocaleString()} on ${t.day}`);
+    btn.setAttribute('aria-label', `Your trophy: ${t.score.toLocaleString()} on ${t.day}`);
 
     const icon = document.createElement('span');
     icon.className = 'cabinet-icon';
@@ -512,3 +512,65 @@ export function fillSparkles(stage, count = 18) {
   }
 }
 
+
+/* ------------------------------------------------------------------ *
+ * The event's winners
+ * ------------------------------------------------------------------ */
+
+const NUMBER_WORDS = ['No one', 'One person', 'Two people', 'Three people', 'Four people', 'Five people'];
+
+/**
+ * Builds the winners card from the event record, so the count on the corner
+ * button, the headline, the trophies and the IDs in the text can't disagree.
+ * Returns each winner's canvas paired with its ID, ready to have a trophy
+ * mounted into it.
+ */
+export function renderWinners({ winners, span, mine, onMine }) {
+  const n = winners.length;
+  const people = n === 1 ? 'person' : 'people';
+  const ids = winners.map((w) => `<strong>ID: ${w.id}</strong>`);
+  const idList = ids.length > 1 ? `${ids.slice(0, -1).join(', ')} and ${ids.at(-1)}` : ids[0];
+
+  el('winners-fab-count').textContent = String(n);
+  el('winners-btn').setAttribute('aria-label', `Trophy event: ${n} ${people} won. Show the winners.`);
+  el('winners-eyebrow').textContent = `Trophy event · ${span}`;
+  el('winners-title').innerHTML = `<span class="gold-text">${n} ${people}</span> won`;
+  el('winners-text').innerHTML =
+    `The trophy event is over. ${NUMBER_WORDS[n] ?? `${n} people`} scored more than 7,500 in a day and ` +
+    `won a real trophy — identified as ${idList}.`;
+
+  const row = el('winners-row');
+  row.replaceChildren();
+  const slots = winners.map((w, i) => {
+    const fig = document.createElement('figure');
+    fig.className = 'winner';
+    fig.style.animationDelay = `${120 + i * 90}ms`;
+
+    const stage = document.createElement('div');
+    stage.className = 'winner-stage';
+    const glow = document.createElement('div');
+    glow.className = 'showcase-glow';
+    glow.setAttribute('aria-hidden', 'true');
+    const canvas = document.createElement('canvas');
+    canvas.className = 'winner-canvas';
+    canvas.tabIndex = 0;
+    canvas.setAttribute('aria-label', `Trophy ID: ${w.id}. Drag or use the arrow keys to turn it.`);
+    stage.append(glow, canvas);
+
+    const id = document.createElement('figcaption');
+    id.className = 'winner-id';
+    id.textContent = `ID: ${w.id}`;
+
+    fig.append(stage, id);
+    row.append(fig);
+    return { id: w.id, stage };
+  });
+
+  const mineBtn = el('winners-mine');
+  mineBtn.hidden = !mine;
+  if (mine) {
+    mineBtn.textContent = `You have ${mine} ${mine === 1 ? 'trophy' : 'trophies'} from the event in your cabinet ›`;
+    mineBtn.onclick = onMine;
+  }
+  return slots;
+}
