@@ -22,12 +22,11 @@ The two buttons state the trade in the only unit that matters — **Keep +150** 
 averages +223** (the expected value of an unseen digit). That isn't advice: an unspent re-roll is
 worth 250 at the end and there are only three, so the arithmetic still doesn't decide for you.
 
-### Win a real trophy
+### The trophy event is over
 
-**Score more than 7,500 in a day and you win a trophy — a real one.** Screenshot the winner screen and
-send it in **#guessle** in the server chat to claim it. A fresh day opens with a popup showing the
-trophy you're playing for; the goal line under the live score shows how close the run is, and runs
-gold when the solver's projection passes 7,500.
+From 17 October to 2 November 2026, scoring more than 7,500 in a day won a real trophy, claimed by
+posting a screenshot of the winner screen in **#guessle**. That event has ended: scores over 7,500 no
+longer win anything. Trophies won while it ran stay in each player's cabinet.
 
 ### Digits wrap
 
@@ -125,26 +124,31 @@ its height, so the button you press is next to the thing it operates. An earlier
 controls to the bottom of the viewport instead; that put the button at the far end of the screen from
 the reels, which is not where your eye already is.
 
-## The trophy
+## The trophy event
 
-7,500 is about **a 1-in-38 day** even for a solver that never misjudges a re-roll, so a trophy means
-something. The odds the popup quotes are read from the same percentile table the ranks use, so the copy
-can't drift from the maths. Exactly 7,500 doesn't count — the rule is *more than*.
+The event ran from **17 October to 2 November 2026**: score more than 7,500 in a day (about a 1-in-38
+day even with perfect re-roll judgement) and win a real trophy, claimed with a screenshot of the winner
+screen posted in #guessle.
 
-### The winner screen is the claim
+It's over, and the code says so rather than carrying a switch. A flag would have left claim screens
+reading "send it in #guessle" one mistaken `true` away from going live again, so the live-event parts
+are gone outright:
 
-Because the prize is physical and claimed by screenshot, the winner screen is built to be screenshotted:
-the trophy, the score, and a line with the **puzzle number, date, the nine digits rolled and the
-re-rolls left** — everything needed to re-score the claim from the image alone, all of it fitting one
-phone screen (checked at 375×667). It can be reopened from **Record → Trophies** in case it was closed
-before anyone took the shot. Achievement toasts that would have fired during the ceremony wait until
-it closes, since a toast renders under the modal's top layer and would play out unseen.
+- **Nothing is awarded.** No winner ceremony, no claim screen, and no retroactive trophies for old
+  winning days — that backfill would otherwise mint new ones today.
+- **The goal line under the live score is gone.** It existed to chase the prize.
+- **The daily challenge popup is now a one-time "the trophy event is over" notice**, shown only to
+  people who were around for it: they saw the old popup, won a trophy, or played a day while it ran.
+  Telling a brand-new player that something they never heard of has ended would just confuse them.
+  It never interrupts a run in progress.
 
-**For whoever hands out the trophies:** this is a client-side game, so a screenshot can't *prove* a win.
-The digits on the winner screen let you catch the easy fake — a number edited in an image editor won't
-re-score to what it claims — but anyone who opens the browser's dev tools can write themselves a winning
-day. Stopping that needs the server to deal the rolls, which this game deliberately doesn't have. Worth
-knowing before the prize gets expensive.
+What stays is the record. Trophies won during the event remain in **Record → Trophies**, travel in save
+files, and can still be turned over in 3D. Reopening one shows the same line of facts the winner screen
+did — puzzle, date, digits, re-rolls — so it still matches any screenshot posted for it, but it no longer
+asks anyone to claim it.
+
+To run an event like it again, the complete version — award, ceremony, claim screen, goal line — is
+commit `a9a3f48`.
 
 ### The 3D trophy
 
@@ -171,9 +175,8 @@ Two timing bugs worth recording, because both rendered the trophy blown-out whit
 ### Storage
 
 Trophies have their own store rather than being derived from history: history keeps 50 days, and a
-trophy shouldn't quietly disappear after seven weeks. Winning days already in your history earn their
-trophies retroactively. Trophies travel in save files and merge like everything else — one per day,
-best score kept.
+trophy shouldn't quietly disappear after seven weeks. They travel in save files and merge like
+everything else — one per day, best score kept.
 
 ## Pressing things
 
@@ -284,7 +287,7 @@ js/fx.js                    starfield, particle bursts, count-up, screen shake
 js/audio.js                 synthesised sound (no audio files)
 js/profile.js               on-device storage and the merge rules
 js/backup.js                save to a file, restore by merging
-js/trophies.js              the trophy rule, odds, award and backfill
+js/trophies.js              the trophy event's dates, and the trophies won during it
 js/trophy3d.js              the WebGL trophy: geometry, shaders, drag-to-spin
 js/ui.js                    rendering
 js/main.js                  game loop and wiring

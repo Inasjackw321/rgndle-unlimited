@@ -2167,101 +2167,6 @@ body {
    Trophy
    ================================================================== */
 
-/* ---------------- The goal line, inside the live bar ---------------- */
-
-.goal {
-  grid-column: 1 / -1;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 0;
-  padding: 7px 12px 8px;
-  border: 0;
-  background: linear-gradient(180deg, rgba(14, 14, 30, 0.92), rgba(10, 10, 24, 0.92));
-  color: var(--muted);
-  font: inherit;
-  cursor: pointer;
-  transition: background 0.25s;
-}
-
-.goal:hover {
-  background: linear-gradient(180deg, rgba(30, 26, 18, 0.95), rgba(14, 12, 10, 0.95));
-}
-
-.goal-track {
-  position: relative;
-  flex: 1;
-  height: 6px;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.07);
-  overflow: hidden;
-}
-
-.goal-pace,
-.goal-fill {
-  position: absolute;
-  inset: 0 auto 0 0;
-  width: 0;
-  border-radius: inherit;
-  transition: width 0.7s cubic-bezier(0.2, 0.9, 0.3, 1);
-}
-
-/* Where the run is heading — a ghost ahead of what's banked. */
-.goal-pace {
-  background: repeating-linear-gradient(
-    -45deg,
-    rgba(192, 132, 252, 0.34) 0 4px,
-    rgba(192, 132, 252, 0.16) 4px 8px
-  );
-}
-
-.goal-fill {
-  background: var(--grad-cool);
-  box-shadow: 0 0 10px -2px var(--accent);
-}
-
-.goal-label {
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-  transition: color 0.3s;
-}
-
-.goal:hover .goal-label {
-  color: var(--text);
-}
-
-.goal.is-hot .goal-fill {
-  background: linear-gradient(90deg, #ffc857, #ff8f5d, #ffe7a6, #ffc857);
-  background-size: 300% 100%;
-  box-shadow: 0 0 14px -1px var(--gold);
-  animation: hue-drift 2.4s ease-in-out infinite;
-}
-
-.goal.is-hot .goal-label {
-  color: var(--gold);
-}
-
-.goal.is-won .goal-track::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(100deg, transparent 30%, rgba(255, 255, 255, 0.75), transparent 70%);
-  background-size: 250% 100%;
-  animation: goal-shine 2.2s ease-in-out infinite;
-}
-
-@keyframes goal-shine {
-  from {
-    background-position: 150% 0;
-  }
-  to {
-    background-position: -50% 0;
-  }
-}
-
 /* ---------------- Trophy count on the Record button ---------------- */
 
 .count-badge {
@@ -2496,34 +2401,6 @@ body {
   }
 }
 
-/* Confetti lives inside the dialog: the page's particle canvas sits under the
-   top layer, so a burst there would fire behind the backdrop. */
-.confetti {
-  position: absolute;
-  inset: 0;
-  z-index: 3;
-  overflow: hidden;
-  pointer-events: none;
-}
-
-.confetti span {
-  position: absolute;
-  top: -18px;
-  border-radius: 2px;
-  animation: confetti-fall linear both;
-}
-
-@keyframes confetti-fall {
-  0% {
-    transform: translate(0, 0) rotate(0deg);
-    opacity: 1;
-  }
-  100% {
-    transform: translate(var(--drift), 400px) rotate(var(--spin));
-    opacity: 0;
-  }
-}
-
 .showcase-body {
   padding: 2px 26px 24px;
   text-align: center;
@@ -2667,43 +2544,6 @@ body {
   filter: brightness(0.95);
 }
 
-/* --- The winning ceremony gets more of everything --------------- */
-
-.showcase.is-ceremony {
-  border-color: rgba(255, 200, 87, 0.55);
-  box-shadow:
-    0 40px 120px -30px #000,
-    0 0 140px -20px rgba(255, 200, 87, 0.6),
-    inset 0 1px 0 rgba(255, 255, 255, 0.1);
-}
-
-.showcase.is-ceremony .showcase-rays {
-  animation:
-    rays-burst 1s cubic-bezier(0.2, 0.9, 0.3, 1) both,
-    rays-turn 14s linear infinite;
-}
-
-@keyframes rays-burst {
-  from {
-    opacity: 0;
-    scale: 0.3;
-  }
-}
-
-.showcase.is-ceremony .showcase-title {
-  animation:
-    title-stamp 0.75s 0.55s cubic-bezier(0.18, 1.5, 0.35, 1) both,
-    gold-sheen 3.6s ease-in-out infinite;
-}
-
-@keyframes title-stamp {
-  from {
-    opacity: 0;
-    transform: scale(2.3);
-    filter: blur(10px);
-  }
-}
-
 /* ---------------- The cabinet ---------------- */
 
 .cabinet {
@@ -2799,9 +2639,6 @@ body {
     padding: 0 18px 20px;
   }
 
-  .goal {
-    padding: 6px 10px 7px;
-  }
 }
 
 /* ---------------- The claim ---------------- */
@@ -2841,32 +2678,17 @@ body {
   color: #ffe7a6;
 }
 
-.claim-later {
-  display: block;
-  margin-top: 3px;
-  font-size: 11.5px;
-  color: var(--muted);
+/* The event is over, so the note is quiet: no camera nudging for a shot. */
+.claim.is-closed {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.04);
+  box-shadow: none;
 }
 
 .claim-icon {
   flex: 0 0 auto;
   font-size: 22px;
   line-height: 1.2;
-  animation: claim-snap 2.6s ease-in-out 1.2s infinite;
-}
-
-/* A camera that occasionally "takes the shot" — a nudge, not a nag. */
-@keyframes claim-snap {
-  0%,
-  86%,
-  100% {
-    transform: scale(1);
-    filter: none;
-  }
-  90% {
-    transform: scale(1.22) rotate(-8deg);
-    filter: drop-shadow(0 0 8px #fff);
-  }
 }
 
 .showcase-text strong {

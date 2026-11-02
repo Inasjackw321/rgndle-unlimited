@@ -41,8 +41,6 @@ const state = {
   history: [],
   /** The live 3D trophy, if a showcase dialog is open. */
   viewer: null,
-  /** Achievement toasts held back while the trophy ceremony is on screen. */
-  pendingToasts: [],
   countdownTimer: null,
   lastResult: null,
 };
@@ -160,7 +158,6 @@ function paintLive() {
       });
 
   ui.setLive({ score, pace, bullseyes: snap.bullseyes, best: personalBest(), done });
-  ui.setGoal({ banked: score, pace, goal: trophies.TROPHY_SCORE, won: done && trophies.earns(score) });
 }
 
 /** Redraws lanes, pips and controls from the persisted game state. */
@@ -373,23 +370,7 @@ async function finish() {
     ui.renderAwards(achievements.ACHIEVEMENTS, achievements.progress().unlocked);
   }
 
-  const won = trophies.earns(result.total);
-  if (won) {
-    const { trophy, number } = trophies.award({
-      day: entry.day,
-      score: result.total,
-      rank: rank.label,
-      digits: result.display,
-      rerollsLeft: result.rerollsLeft,
-    });
-    refreshTrophies();
-    // Achievements wait their turn: toasts render under the top layer a modal
-    // lives in, so any that fired now would play out unseen behind it.
-    state.pendingToasts.push(...unlocked);
-    setTimeout(() => openTrophy(trophy, number, { ceremony: true }), 1100);
-  } else {
-    showToasts(unlocked);
-  }
+  showToasts(unlocked);
 }
 
 function showToasts(awards) {
@@ -423,6 +404,9 @@ function setupHelp() {
  * Trophy
  * ------------------------------------------------------------------ */
 
+/** Set once the "event is over" notice has been seen — it's a one-time thing. */
+const EVENT_OVER_SEEN = 'guessle_event_over_seen';
+/** Set by the event's daily popup, so it marks someone who was around for it. */
 const CHALLENGE_SEEN = 'guessle_challenge_seen';
 
 function refreshTrophies() {
@@ -431,8 +415,8 @@ function refreshTrophies() {
   ui.renderCabinet(all, {
     puzzleOf: (day) => daily.puzzleNumber(day),
     onOpen: (t, n) => openTrophy(t, n),
-    onShow: () => openChallenge(),
-    oneIn: trophies.oneIn(),
+    onShow: () => openEventOver(),
+    span: trophies.EVENT.span,
   });
 }
 
@@ -463,21 +447,23 @@ function closeViewer() {
   state.viewer = null;
 }
 
-function openChallenge() {
+function openEventOver() {
   audio.press();
-  openShowcase(ui.el('challenge-dialog'), { top: 'GUESSLE', bottom: 'OVER 7,500' });
+  const count = trophies.list().length;
+  ui.el('event-count').textContent = count
+    ? `${count} ${count === 1 ? 'trophy' : 'trophies'} in your cabinet`
+    : 'none in your cabinet';
+  openShowcase(ui.el('event-dialog'), { top: 'GUESSLE', bottom: 'THANK YOU' });
 }
 
 /**
- * The winner screen. The trophy is real and claimed by screenshot, so this is
- * the claim: it has to name the puzzle, the day, and what was actually rolled —
- * enough to re-score it from the image alone — and it can be reopened from the
- * cabinet in case it was closed before anyone took the screenshot.
+ * A trophy won during the event, turned over in 3D. Its line of facts —
+ * puzzle, day, digits, re-rolls — is the same one the winner screen showed, so
+ * it still matches any screenshot that was posted for it.
  */
-function openTrophy(trophy, number, { ceremony = false } = {}) {
-  const dialog = ui.el('trophy-dialog');
+function openTrophy(trophy, number) {
   const puzzle = daily.puzzleNumber(trophy.day);
-  ui.el('trophy-eyebrow').textContent = ceremony ? 'You won a real trophy' : `Trophy ${number} · real-life prize`;
+  ui.el('trophy-eyebrow').textContent = `Trophy ${number} · trophy event`;
   ui.el('trophy-title').textContent = trophy.score.toLocaleString();
 
   const facts = [`Guessle #${puzzle}`, trophy.day];
@@ -486,27 +472,18 @@ function openTrophy(trophy, number, { ceremony = false } = {}) {
     facts.push(`${trophy.rerollsLeft} re-roll${trophy.rerollsLeft === 1 ? '' : 's'} left`);
   }
   ui.el('trophy-text').textContent = facts.join(' · ');
-  dialog.classList.toggle('is-ceremony', ceremony);
 
-  const stage = openShowcase(dialog, {
+  openShowcase(ui.el('trophy-dialog'), {
     top: `GUESSLE #${puzzle}`,
     bottom: trophy.score.toLocaleString(),
-    reveal: ceremony,
   });
-
-  if (ceremony) {
-    audio.thud();
-    audio.fanfare(14);
-    buzz([20, 60, 30, 60, 90]);
-    ui.throwConfetti(stage);
-  }
 }
 
 function setupTrophies() {
-  const challenge = ui.el('challenge-dialog');
+  const notice = ui.el('event-dialog');
   const trophy = ui.el('trophy-dialog');
 
-  for (const dialog of [challenge, trophy]) {
+  for (const dialog of [notice, trophy]) {
     dialog.querySelector('.showcase-close').addEventListener('click', () => dialog.close());
     dialog.addEventListener('click', (e) => {
       if (e.target === dialog) dialog.close();
@@ -514,52 +491,53 @@ function setupTrophies() {
     dialog.addEventListener('close', closeViewer);
   }
 
-  challenge.addEventListener('close', () => {
+  notice.addEventListener('close', () => {
     try {
-      localStorage.setItem(CHALLENGE_SEEN, daily.dateKey());
+      localStorage.setItem(EVENT_OVER_SEEN, '1');
     } catch {
       /* it just shows again next time */
     }
   });
-  ui.el('challenge-go').addEventListener('click', () => challenge.close());
-
-  trophy.addEventListener('close', () => {
-    showToasts(state.pendingToasts.splice(0));
-  });
+  ui.el('event-ok').addEventListener('click', () => notice.close());
   ui.el('trophy-ok').addEventListener('click', () => trophy.close());
 
-  ui.el('goal').addEventListener('click', openChallenge);
-  ui.el('help-trophy').addEventListener('click', () => {
+  ui.el('help-trophies').addEventListener('click', () => {
     ui.el('help-dialog').close();
-    openChallenge();
+    ui.el('drawer').showModal();
+    document.querySelector('.tab[data-panel="trophies"]').click();
   });
-
-  const n = trophies.oneIn();
-  ui.el('challenge-odds').textContent = `about 1 day in ${n}`;
-  ui.el('help-odds').textContent = `Even perfect re-roll judgement gets there about 1 day in ${n}.`;
 }
 
 /**
- * The challenge introduces itself once, at the start of a fresh day — not
- * mid-run, not after the day's done, and not again once dismissed.
+ * Tells people who were around for the trophy event that it's over — once.
+ *
+ * Only them: telling a brand-new player that something they never heard of has
+ * ended would just be confusing. "Around for it" means they saw the event's
+ * popup, won a trophy, or played a day while it was running. Not mid-run,
+ * either; a half-played day waits for the next load.
  */
-function maybeShowChallenge() {
+function maybeShowEventOver() {
   const snap = game.snapshot();
-  const fresh = snap.phase === 'ready' && snap.rolled.length === 0 && snap.rerollsUsed === 0;
-  let seen = null;
-  try {
-    seen = localStorage.getItem(CHALLENGE_SEEN);
-  } catch {
-    /* storage blocked — show it */
-  }
-  if (!fresh || seen === daily.dateKey()) return;
+  const midRun =
+    snap.phase !== 'done' && (snap.rolled.length > 0 || snap.phase === 'deciding' || snap.rerollsUsed > 0);
 
-  const count = trophies.list().length;
-  ui.el('challenge-count').textContent = count
-    ? `${count} in your cabinet`
-    : 'none in your cabinet yet';
+  let seen = null;
+  let sawChallenge = null;
+  try {
+    seen = localStorage.getItem(EVENT_OVER_SEEN);
+    sawChallenge = localStorage.getItem(CHALLENGE_SEEN);
+  } catch {
+    return; // storage blocked: no way to show it only once, so don't show it
+  }
+
+  const wasThere =
+    Boolean(sawChallenge) ||
+    trophies.list().length > 0 ||
+    state.history.some((h) => h.day >= trophies.EVENT.started);
+  if (seen || midRun || !wasThere) return;
+
   setTimeout(() => {
-    if (!document.querySelector('dialog[open]')) openChallenge();
+    if (!document.querySelector('dialog[open]')) openEventOver();
   }, 650);
 }
 
@@ -604,7 +582,6 @@ function setupBackup() {
       if (failed.length) throw new backup.RestoreError('This browser is blocking storage.');
 
       reloadProfile();
-      trophies.backfill(state.history);
       refreshTrophies();
       ui.flashButton(restoreBtn, 'Restored!');
       const { days } = backup.describe(save);
@@ -818,9 +795,8 @@ function init() {
   reloadProfile();
 
   setupTrophies();
-  trophies.backfill(state.history);
   refreshTrophies();
-  maybeShowChallenge();
+  maybeShowEventOver();
 }
 
 init();

@@ -62,15 +62,6 @@
             <span class="live-label">BULLSEYES</span>
             <span class="live-value" id="live-bulls">0</span>
           </div>
-          <!-- The trophy line. The solid fill is what's banked; the ghost fill
-               behind it is where the solver says this run is heading. -->
-          <button class="goal" id="goal" type="button" aria-label="Score more than 7,500 to win a real trophy. Show the trophy.">
-            <span class="goal-track" aria-hidden="true">
-              <span class="goal-pace" id="goal-pace"></span>
-              <span class="goal-fill" id="goal-fill"></span>
-            </span>
-            <span class="goal-label" id="goal-label"><span aria-hidden="true">🏆</span> 7,500</span>
-          </button>
         </div>
 
         <div class="machine">
@@ -182,57 +173,56 @@
 
     <div class="toasts" id="toasts" aria-live="polite" aria-atomic="false"></div>
 
-    <!-- What you can win. Shown once at the start of a fresh day. -->
-    <dialog id="challenge-dialog" class="showcase" aria-labelledby="challenge-title">
+    <!-- The trophy event has ended. Shown once, and only to people who were
+         around for it. -->
+    <dialog id="event-dialog" class="showcase" aria-labelledby="event-title">
       <button class="showcase-close" type="button" aria-label="Close">✕</button>
       <div class="showcase-stage">
         <div class="showcase-rays" aria-hidden="true"></div>
         <div class="showcase-glow" aria-hidden="true"></div>
         <div class="sparkles" aria-hidden="true"></div>
-        <canvas class="showcase-canvas" tabindex="0" aria-label="The trophy. Drag or use the arrow keys to turn it."></canvas>
+        <canvas class="showcase-canvas" tabindex="0" aria-label="The event's trophy. Drag or use the arrow keys to turn it."></canvas>
         <span class="showcase-hint" aria-hidden="true">drag to spin</span>
       </div>
       <div class="showcase-body">
-        <p class="showcase-eyebrow">Real-life prize</p>
-        <h2 class="showcase-title" id="challenge-title">Score more than <span class="gold-text">7,500</span></h2>
+        <p class="showcase-eyebrow">Trophy event</p>
+        <h2 class="showcase-title" id="event-title">The trophy event is <span class="gold-text">over</span></h2>
         <p class="showcase-text">
-          Beat 7,500 points in one day and win this trophy <strong>in real life</strong>. Screenshot your
-          winner screen and send it in <strong>#guessle</strong> in the server chat to claim it.
+          Thanks to everyone who played for a real trophy. Scores over 7,500 no longer win one — any
+          trophies you won stay in your cabinet under Record → Trophies.
         </p>
         <div class="showcase-chips">
-          <span class="chip" id="challenge-odds"></span>
-          <span class="chip" id="challenge-count"></span>
+          <span class="chip">ran 17 Oct – 2 Nov</span>
+          <span class="chip" id="event-count"></span>
         </div>
-        <button class="showcase-cta" id="challenge-go" type="button" autofocus>Let's roll</button>
+        <button class="showcase-cta" id="event-ok" type="button" autofocus>Got it</button>
       </div>
     </dialog>
 
-    <!-- The trophy itself: the winning ceremony, or a look at one you own. -->
+    <!-- A trophy won during the event, turned over in 3D. -->
     <dialog id="trophy-dialog" class="showcase is-trophy" aria-labelledby="trophy-title">
       <button class="showcase-close" type="button" aria-label="Close">✕</button>
       <div class="showcase-stage">
         <div class="showcase-rays" aria-hidden="true"></div>
         <div class="showcase-glow" aria-hidden="true"></div>
         <div class="sparkles" aria-hidden="true"></div>
-        <div class="confetti" aria-hidden="true"></div>
         <canvas class="showcase-canvas" tabindex="0" aria-label="Your trophy. Drag or use the arrow keys to turn it."></canvas>
         <span class="showcase-hint" aria-hidden="true">drag to spin</span>
       </div>
       <div class="showcase-body">
-        <p class="showcase-eyebrow" id="trophy-eyebrow">You won a real trophy</p>
+        <p class="showcase-eyebrow" id="trophy-eyebrow">Trophy event</p>
         <h2 class="showcase-title gold-text" id="trophy-title">8,240</h2>
-        <!-- Puzzle, date, digits and re-rolls: everything needed to re-score
-             the claim from the screenshot alone. -->
+        <!-- The same facts the winner screen showed, so it still matches any
+             screenshot posted for it. -->
         <p class="showcase-text claim-facts" id="trophy-text"></p>
-        <div class="claim">
-          <span class="claim-icon" aria-hidden="true">📸</span>
+        <div class="claim is-closed">
+          <span class="claim-icon" aria-hidden="true">🏁</span>
           <p>
-            <strong>Screenshot this screen</strong> and send it in <strong>#guessle</strong> in the server
-            chat to claim your trophy.
-            <span class="claim-later">You can reopen it any time from Record → Trophies.</span>
+            <strong>The trophy event is over.</strong> You won this one while it ran, and it stays in your
+            cabinet.
           </p>
         </div>
-        <button class="showcase-cta" id="trophy-ok" type="button" autofocus>Got it</button>
+        <button class="showcase-cta" id="trophy-ok" type="button" autofocus>Close</button>
       </div>
     </dialog>
 
@@ -263,13 +253,13 @@
           Judging that is the whole game.
         </p>
 
-        <h3>Trophies</h3>
+        <h3>Trophy event</h3>
         <p>
-          Score more than 7,500 in a day and you win a real trophy. Screenshot the winner screen and send
-          it in <strong>#guessle</strong> in the server chat to claim it. <span id="help-odds"></span>
+          The real-life trophy event ran from 17 October to 2 November and is now over — scores over 7,500
+          no longer win a trophy. Any you won during it are in Record → Trophies.
         </p>
         <p class="setup-actions">
-          <button type="button" class="share-btn" id="help-trophy">See the trophy</button>
+          <button type="button" class="share-btn" id="help-trophies">See your trophies</button>
         </p>
 
         <h3>Ranks are real</h3>
